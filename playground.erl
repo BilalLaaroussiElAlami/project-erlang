@@ -1,6 +1,10 @@
 -module(playground).
--export([fn/1]).
+-export([main/0]).
 
-fn(p) ->
-    G = fun (q) -> p*q end,
-    G(3).
+main() ->
+    X = 
+        if(false) -> 10;
+    true -> 20 end,
+    io:fwrite("X is ~p~n", [X]).
+
+

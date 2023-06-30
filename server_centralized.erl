@@ -48,7 +48,8 @@ initialize_with(Unis) ->
 % Users is a dictionary of user names to tuples of the form:
 %     {user, Name, Subscriptions, Messages}
 % TODO add a pid where the user is stored
-% where Subscriptions is a set of usernames that the user follows, and
+% Subscriptions  example: [[john, 8.0.8], [doe, 1.1.1], ...,  [usernameFollowee, spidFollowee])
+% Subscriptions is a set of usernames with their respective server keys i.e. where this username 'lives'.
 % Messages is a list of messages, of the form:
 %     {message, UserName, MessageText, SendTime}
 server_actor(Users) ->
@@ -67,8 +68,9 @@ server_actor(Users) ->
             Sender ! {self(), logged_in},
             server_actor(Users);
 
-        {Sender, follow, UserName, UserNameToFollow} ->
-            NewUsers = follow(Users, UserName, UserNameToFollow),
+    
+        {Sender, follow, UserName, UserNameToFollow, SpidToFollow} ->
+            NewUsers = follow(Users, UserName, UserNameToFollow, SpidToFollow),
             Sender ! {self(), followed},
             server_actor(NewUsers);
 
@@ -77,9 +79,15 @@ server_actor(Users) ->
             Sender ! {self(), message_sent},
             server_actor(NewUsers);
 
+        %sender isClient
         {Sender, get_timeline, UserName} ->
-            Sender ! {self(), timeline, UserName, timeline(Users, UserName)},
+            spawn_link(?MODULE, timeline, [Sender, Users, UserName]),
+            Sender ! {self(), simple_message, getting_timeline_please_be_patient},
             server_actor(Users);
+
+        %SenderClient is pid of process who orignally asked the timeline
+        {_Sender, timeLine, SenderClient, UserName, TimeLine} ->
+            SenderClient ! {self(), timeline, UserName, TimeLine};
 
         {Sender, get_profile, UserName} ->
             Sender ! {self(), profile, UserName, sort_messages(get_messages(Users, UserName))},
@@ -104,10 +112,12 @@ get_user(UserName, Users) ->
         error -> throw({user_not_found, UserName})
     end.
 
+
+
 % Update `Users` so `UserName` follows `UserNameToFollow`.
-follow(Users, UserName, UserNameToFollow) ->
+follow(Users, UserName, UserNameToFollow, SpidToFollow) ->
     {user, Name, Subscriptions, Messages} = get_user(UserName, Users),
-    NewUser = {user, Name, sets:add_element(UserNameToFollow, Subscriptions), Messages},
+    NewUser = {user, Name, sets:add_element([UserNameToFollow, SpidToFollow], Subscriptions), Messages},
     dict:store(UserName, NewUser, Users).
 
 % Modify `Users` to store `Message`.
@@ -123,7 +133,11 @@ get_messages(Users, UserName) ->
     Messages.
 
 % Generate timeline for `UserName`.
-timeline(Users, UserName) ->
+% 1)  Get followees of Username
+% 2) Divide into local followees and remote followees
+% 3) Messegas local followees: get_messages function easy,  Messages remote followees: Don't know yet
+% Sender is pid of process who needs to receive the timeline
+timeline(Sender, Users, UserName) ->
     {user, _, Subscriptions, _} = get_user(UserName, Users),
     UnsortedMessagesForTimeLine =
         lists:foldl(fun(FollowedUserName, AllMessages) ->
@@ -132,6 +146,33 @@ timeline(Users, UserName) ->
                     [],
                     sets:to_list(Subscriptions)),
     sort_messages(UnsortedMessagesForTimeLine).
+
+timeline(Sender, Users, UserName) ->
+    {user, _, Subscriptions, _} = get_user(UserName, Users), 
+    LocalSubscriberNames = [Username || [Username, _Pid] <- Subscriptions, lists:keymember(Username, 2, Users)],
+    RemoteSubscribers    = [[Username, Spid] || [Username, SPid] <- Subscriptions, not lists:member(Username, ExistingUsernames)],
+    MessagesLocalSubscribers = 
+        lists:foldl(fun(FollowedUserName, AllMessages) ->
+                        AllMessages ++ get_messages(Users, FollowedUserName)
+                    end,
+                    [],
+                    sets:to_list(LocalSubscriberNames)),
+                    OriginalList = [[Value1, Key], [Value2, Key], [Value3, Key], ...],
+                    
+    RemoteSubscribersGrouped = lists:foldl(
+        fun([Username, Spid], Acc) ->
+            case lists:keysearch(Spid, 1, Acc) of
+                {value, {Spid, Usernames}} -> [{Spid, [Username | Usernames]} | lists:keydelete(Spid, 1, Acc)];
+                false -> [{Spid, [Username]} | Acc]
+            end
+        end,
+        [],
+        RemoteSubscribers).
+
+    MessagesRemoteSubscribers = 
+
+
+
 
 % Sort `Messages` from most recent to oldest.
 sort_messages(Messages) ->
