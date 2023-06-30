@@ -85,9 +85,9 @@ server_actor(Users) ->
             Sender ! {self(), simple_message, getting_timeline_please_be_patient},
             server_actor(Users);
 
-        %SenderClient is pid of process who orignally asked the timeline
-        {_Sender, timeLine, SenderClient, UserName, TimeLine} ->
-            SenderClient ! {self(), timeline, UserName, TimeLine};
+        {Sender, get_messages_users, UserNames} ->
+            spawn_link(?MODULE, get_messages_users, [Sender, Users,  UserNames]);
+
 
         {Sender, get_profile, UserName} ->
             Sender ! {self(), profile, UserName, sort_messages(get_messages(Users, UserName))},
@@ -132,32 +132,38 @@ get_messages(Users, UserName) ->
     {user, _, _, Messages} = get_user(UserName, Users),
     Messages.
 
+%Recipient is the Spid that needs the result
+get_messages_users(Recipient, Users, UserNames) -> 
+    Messages = lists:flatten(lists:map(fun(UserName) -> get_messages(Users, UserName) end, UserNames)),
+    Recipient ! {self(), Messages}.
+
+
 % Generate timeline for `UserName`.
 % 1)  Get followees of Username
 % 2) Divide into local followees and remote followees
 % 3) Messegas local followees: get_messages function easy,  Messages remote followees: Don't know yet
 % Sender is pid of process who needs to receive the timeline
-timeline(Sender, Users, UserName) ->
-    {user, _, Subscriptions, _} = get_user(UserName, Users),
-    UnsortedMessagesForTimeLine =
-        lists:foldl(fun(FollowedUserName, AllMessages) ->
-                        AllMessages ++ get_messages(Users, FollowedUserName)
-                    end,
-                    [],
-                    sets:to_list(Subscriptions)),
-    sort_messages(UnsortedMessagesForTimeLine).
+
+%timeline(Sender, Users, UserName) ->
+%    {user, _, Subscriptions, _} = get_user(UserName, Users),
+%    UnsortedMessagesForTimeLine =
+%        lists:foldl(fun(FollowedUserName, AllMessages) ->
+%                        AllMessages ++ get_messages(Users, FollowedUserName)
+%                    end,
+%                    [],
+%                    sets:to_list(Subscriptions)),
+%    sort_messages(UnsortedMessagesForTimeLine).
 
 timeline(Sender, Users, UserName) ->
     {user, _, Subscriptions, _} = get_user(UserName, Users), 
     LocalSubscriberNames = [Username || [Username, _Pid] <- Subscriptions, lists:keymember(Username, 2, Users)],
-    RemoteSubscribers    = [[Username, Spid] || [Username, SPid] <- Subscriptions, not lists:member(Username, ExistingUsernames)],
+    RemoteSubscribers    = [[Username, Spid] || [Username, Spid] <- Subscriptions, not lists:member(Username, LocalSubscriberNames)],
     MessagesLocalSubscribers = 
         lists:foldl(fun(FollowedUserName, AllMessages) ->
                         AllMessages ++ get_messages(Users, FollowedUserName)
                     end,
                     [],
                     sets:to_list(LocalSubscriberNames)),
-                    OriginalList = [[Value1, Key], [Value2, Key], [Value3, Key], ...],
                     
     RemoteSubscribersGrouped = lists:foldl(
         fun([Username, Spid], Acc) ->
@@ -167,12 +173,19 @@ timeline(Sender, Users, UserName) ->
             end
         end,
         [],
-        RemoteSubscribers).
+        RemoteSubscribers),
 
     MessagesRemoteSubscribers = 
-
-
-
+        lists:foldl(
+            fun({Spid, UserNames}, Acc) ->
+                Spid ! {self(), get_messages_users, UserNames},
+                %efficiency gain possible by making new processes and accumulating them but any delay here won't have an impact on the whole system, just the user will need to wait some more
+                receive Messages -> Messages ++ Acc end 
+            end,
+            [],
+            RemoteSubscribersGrouped),
+    AllMessagesSorted = sort_messages(MessagesLocalSubscribers ++ MessagesRemoteSubscribers),
+    Sender ! {self(), timeline, UserName, AllMessagesSorted}.
 
 % Sort `Messages` from most recent to oldest.
 sort_messages(Messages) ->

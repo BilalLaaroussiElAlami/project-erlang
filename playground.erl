@@ -1,10 +1,10 @@
 -module(playground).
 -export([main/0]).
 
+double(X) ->
+    X*2.
 main() ->
-    X = 
-        if(false) -> 10;
-    true -> 20 end,
-    io:fwrite("X is ~p~n", [X]).
+    io:fwrite("~p", [lists:map(fun double/1, [1,2,3])]).
+
 
 
