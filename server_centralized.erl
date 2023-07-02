@@ -13,7 +13,7 @@
 -include_lib("eunit/include/eunit.hrl").
 
 -export([initialize/0, initialize_with/1, server_actor/1, typical_session_1/1,
-    typical_session_2/1]).
+    typical_session_2/1, timeline/3, get_messages_users/3]).
 
 %%- Aide aux activités en ligne
 %% Additional API Functions
@@ -26,7 +26,7 @@ initialize() ->
 % Start server with an initial state.
 % Useful for benchmarking.
 
-%Unis : [ [serverName, DictionaryofUser],  [vub, UsersVub], [ulb, UsresHenry], ...]
+%Unis : [ [serverName, DictionaryofUser],  [vub, UsersVubDict], [ulb, UsersUlbDict], ...]
 % {user, Name, Subscriptions, Messages}
 initialize_with(Unis) ->
     lists:map(
@@ -60,7 +60,7 @@ server_actor(Users) ->
 
         {Sender, register_user, UserName} ->
             NewUsers = dict:store(UserName, create_user(UserName), Users),
-            Sender ! {self(), user_registered},
+            Sender ! {self(), user_registered, UserName},
             server_actor(NewUsers);
 
         {Sender, log_in, _UserName} ->
@@ -79,7 +79,7 @@ server_actor(Users) ->
             Sender ! {self(), message_sent},
             server_actor(NewUsers);
 
-        %sender isClient
+        %sender is client
         {Sender, get_timeline, UserName} ->
             spawn_link(?MODULE, timeline, [Sender, Users, UserName]),
             Sender ! {self(), simple_message, getting_timeline_please_be_patient},
@@ -135,7 +135,7 @@ get_messages(Users, UserName) ->
 %Recipient is the Spid that needs the result
 get_messages_users(Recipient, Users, UserNames) -> 
     Messages = lists:flatten(lists:map(fun(UserName) -> get_messages(Users, UserName) end, UserNames)),
-    Recipient ! {self(), Messages}.
+    Recipient ! {self(), messages,  Messages}.
 
 
 % Generate timeline for `UserName`.
@@ -156,15 +156,14 @@ get_messages_users(Recipient, Users, UserNames) ->
 
 timeline(Sender, Users, UserName) ->
     {user, _, Subscriptions, _} = get_user(UserName, Users), 
-    LocalSubscriberNames = [Username || [Username, _Pid] <- Subscriptions, lists:keymember(Username, 2, Users)],
-    RemoteSubscribers    = [[Username, Spid] || [Username, Spid] <- Subscriptions, not lists:member(Username, LocalSubscriberNames)],
+    LocalSubscriberNames = [Username || [Username, _Pid] <- sets:to_list(Subscriptions), dict:is_key(Username, Users)],
+    RemoteSubscribers    = [[Username, Spid] || [Username, Spid] <- sets:to_list(Subscriptions), not lists:member(Username, LocalSubscriberNames)],
     MessagesLocalSubscribers = 
         lists:foldl(fun(FollowedUserName, AllMessages) ->
                         AllMessages ++ get_messages(Users, FollowedUserName)
                     end,
                     [],
-                    sets:to_list(LocalSubscriberNames)),
-                    
+                    LocalSubscriberNames),
     RemoteSubscribersGrouped = lists:foldl(
         fun([Username, Spid], Acc) ->
             case lists:keysearch(Spid, 1, Acc) of
@@ -179,11 +178,14 @@ timeline(Sender, Users, UserName) ->
         lists:foldl(
             fun({Spid, UserNames}, Acc) ->
                 Spid ! {self(), get_messages_users, UserNames},
-                %efficiency gain possible by making new processes and accumulating them but any delay here won't have an impact on the whole system, just the user will need to wait some more
-                receive Messages -> Messages ++ Acc end 
+                %efficiency gain possible by making new processes and accumulating them but any delay here won't have an impact on the whole system, just the user will need to wait some more                
+                receive {_Send, messages,  Messages} -> Messages ++ Acc;
+                        X -> io:format("expected {Sender, messages, Messages}, but received ~p\n", [X])
+                 end 
             end,
             [],
             RemoteSubscribersGrouped),
+
     AllMessagesSorted = sort_messages(MessagesLocalSubscribers ++ MessagesRemoteSubscribers),
     Sender ! {self(), timeline, UserName, AllMessagesSorted}.
 
@@ -216,6 +218,36 @@ bilal_initialize_test() ->
         {_, users, Users2} -> io:format("vub users: ~p", [Users2]), ?assertMatch(Users2,UsersVub);
          _ -> erlang:error(unexpected_message_received) end,
     ?assertMatch(ok,ok).
+
+
+bilal_timeline_test() ->
+    initialize_with([[vub, dict:new()], [ulb,dict:new()]]),
+    vub ! {self(), register_user, "Alice"},
+    vub ! {self(), register_user, "Bob"},
+    ulb ! {self(), register_user, "Charlie"},
+    ulb ! {self(), register_user, "Dave"}, 
+    ulb ! {self(), register_user, "Eve"},
+
+    vub ! {self(), follow, "Alice", "Bob", vub},
+    vub ! {self(), follow, "Alice", "Charlie", ulb},
+    vub ! {self(), follow, "Alice", "Dave", ulb},
+    vub ! {self(), send_message, "Bob", "Let's build something amazing together! #BobTheBuilder #ConstructionLife", "07h30"},
+    vub ! {self(), send_message, "Bob", "It was a productive work day", "18h00"}, 
+    ulb ! {self(), send_message, "Charlie", "I like chocolate", "14h00"},
+    ulb ! {self(), send_message, "Charlie", "Hooray, It is my birthday ", "19h00"},
+    ulb ! {self(), send_message, "Dave", "I am the best rapper in the UK", "00h30"},
+    vub ! {self(), get_timeline, "Alice"},
+    
+    receive
+        {_Sender, timeline, Username, TimeLine} -> 
+            io:format("Timeline ~p:\n~p\n",[Username,TimeLine]),
+            ?assertMatch(TimeLine, 
+                [{message,"Charlie","Hooray, It is my birthday ","19h00"},
+                 {message,"Bob","It was a productive work day","18h00"},
+                 {message,"Charlie","I like chocolate","14h00"},
+                 {message,"Bob","Let's build something amazing together! #BobTheBuilder #ConstructionLife","07h30"},
+                 {message,"Dave","I am the best rapper in the UK","00h30"}])
+        end.
 
 % Test initialize function
 initialize_test() ->

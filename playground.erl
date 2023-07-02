@@ -1,10 +1,18 @@
 -module(playground).
 -export([main/0]).
 
-double(X) ->
-    X*2.
 main() ->
-    io:fwrite("~p", [lists:map(fun double/1, [1,2,3])]).
+    {Sender, messages, Messages} 
+    = 
+    { 0990,
+        messages,
+                        [{message,"Charlie",
+                                                       "I like chocolate",
+                                                       "14h00"},
+                                                      {message,"Charlie",
+                                                       "Hooray, It is my birthday ",
+                                                       "19h00"}]},
+    io:format(" ~p \n ~p \n ~p", [Sender, messages, Messages]).
 
 
 
