@@ -13,7 +13,7 @@
 -include_lib("eunit/include/eunit.hrl").
 
 -export([initialize/0, initialize_with/1, server_actor/1, typical_session_1/1,
-    typical_session_2/1, timeline/3, get_messages_users/3]).
+    typical_session_2/1, timeline/3, get_messages_users/3, get_profile/4]).
 
 %%- Aide aux activités en ligne
 %% Additional API Functions
@@ -42,7 +42,6 @@ initialize_with(Unis) ->
    % register(server_actor, ServerPid),
    % ServerPid.
 
-%okokok
 % The server actor works like a small database and encapsulates all state of
 % this simple implementation.
 % Users is a dictionary of user names to tuples of the form:
@@ -79,7 +78,9 @@ server_actor(Users) ->
             Sender ! {self(), message_sent},
             server_actor(NewUsers);
 
-        %sender is client
+        %possible optimisation: keep aldo who followed by for every user, if a user makes a post the people who get follow that user will get informed.
+        %when we fetch the timeline for a user we only need to fetch the messages of the uses who made a post and save it on top their timeline (so we also need to save the
+        %The biggest  efficiency gain will happen if a user follows a lot of users but only a few regularly post while most of them rarely post
         {Sender, get_timeline, UserName} ->
             spawn_link(?MODULE, timeline, [Sender, Users, UserName]),
             Sender ! {self(), simple_message, getting_timeline_please_be_patient},
@@ -89,8 +90,9 @@ server_actor(Users) ->
             spawn_link(?MODULE, get_messages_users, [Sender, Users,  UserNames]);
 
 
-        {Sender, get_profile, UserName} ->
-            Sender ! {self(), profile, UserName, sort_messages(get_messages(Users, UserName))},
+        {Sender, get_profile, UserName, SpidUser} ->
+            spawn_link(?MODULE, get_profile, [Sender, Users, UserName, SpidUser]),
+            Sender ! {self(), simple_message , getting_profile_please_be_patient},
             server_actor(Users)
     end.
 
@@ -112,7 +114,11 @@ get_user(UserName, Users) ->
         error -> throw({user_not_found, UserName})
     end.
 
-
+get_profile(Sender, Users, UserName,SpidUser) ->  
+       case dict:find(UserName, Users) of
+         {ok,_User} ->  Sender ! {self(), profile, UserName, sort_messages(get_messages(Users, UserName))};  %If user is stored at the local instance itself
+         _ ->  SpidUser ! {Sender, get_profile, UserName, SpidUser}
+    end.
 
 % Update `Users` so `UserName` follows `UserNameToFollow`.
 follow(Users, UserName, UserNameToFollow, SpidToFollow) ->
@@ -136,6 +142,10 @@ get_messages(Users, UserName) ->
 get_messages_users(Recipient, Users, UserNames) -> 
     Messages = lists:flatten(lists:map(fun(UserName) -> get_messages(Users, UserName) end, UserNames)),
     Recipient ! {self(), messages,  Messages}.
+
+
+
+  
 
 
 % Generate timeline for `UserName`.
@@ -180,7 +190,7 @@ timeline(Sender, Users, UserName) ->
                 Spid ! {self(), get_messages_users, UserNames},
                 %efficiency gain possible by making new processes and accumulating them but any delay here won't have an impact on the whole system, just the user will need to wait some more                
                 receive {_Send, messages,  Messages} -> Messages ++ Acc;
-                        X -> io:format("expected {Sender, messages, Messages}, but received ~p\n", [X])
+                        X -> error("Should not happen, go look in timeline function", [X])
                  end 
             end,
             [],
@@ -238,8 +248,11 @@ bilal_timeline_test() ->
     ulb ! {self(), send_message, "Dave", "I am the best rapper in the UK", "00h30"},
     vub ! {self(), get_timeline, "Alice"},
     
-    receive
-        {_Sender, timeline, Username, TimeLine} -> 
+    %  receive
+    %     {_, simple_message, MSG} ->
+    %       io:format("simple message: ~p\n", [MSG]) end,
+    receive 
+        {_, timeline, Username, TimeLine} -> 
             io:format("Timeline ~p:\n~p\n",[Username,TimeLine]),
             ?assertMatch(TimeLine, 
                 [{message,"Charlie","Hooray, It is my birthday ","19h00"},
@@ -248,6 +261,38 @@ bilal_timeline_test() ->
                  {message,"Bob","Let's build something amazing together! #BobTheBuilder #ConstructionLife","07h30"},
                  {message,"Dave","I am the best rapper in the UK","00h30"}])
         end.
+
+bilal_get_profile_test() ->
+    initialize_with([[vub, dict:new()], [ulb,dict:new()]]),
+    vub ! {self(), register_user, "Alice"},
+    vub ! {self(), register_user, "Bob"},
+    ulb ! {self(), register_user, "Charlie"},
+    ulb ! {self(), register_user, "Dave"}, 
+    ulb ! {self(), register_user, "Eve"},
+
+    vub ! {self(), follow, "Alice", "Bob", vub},
+    vub ! {self(), follow, "Alice", "Charlie", ulb},
+    vub ! {self(), follow, "Alice", "Dave", ulb},
+    vub ! {self(), send_message, "Bob", "Let's build something amazing together! #BobTheBuilder #ConstructionLife", "07h30"},
+    vub ! {self(), send_message, "Bob", "It was a productive work day", "18h00"}, 
+    ulb ! {self(), send_message, "Charlie", "I like chocolate", "14h00"},
+    ulb ! {self(), send_message, "Charlie", "Hooray, It is my birthday ", "19h00"},
+    ulb ! {self(), send_message, "Dave", "I am the best rapper in the UK", "00h30"},
+
+        
+    vub ! {self(), get_profile, "Bob", vub}, %get Bob's timeline by sending request to vub server (server where Bob is registered)
+    receive 
+        {_, profile, _, Profile} ->
+            io:format("Bob's profile:\n ~p", [Profile]),
+        ?assertMatch(Profile, [{message,"Bob","It was a productive work day","18h00"}, {message,"Bob","Let's build something amazing together! #BobTheBuilder #ConstructionLife","07h30"}]) end,
+    
+     ulb ! {self(), get_profile, "Bob", vub}, %get Bob's timeline by sending request to ulb server 
+    receive 
+        {_, profile, _, ProfileB} ->
+            io:format("Bob's profile:\n ~p", [Profile]),
+        ?assertMatch(ProfileB, [{message,"Bob","It was a productive work day","18h00"}, {message,"Bob","Let's build something amazing together! #BobTheBuilder #ConstructionLife","07h30"}]) end.
+
+
 
 % Test initialize function
 initialize_test() ->
