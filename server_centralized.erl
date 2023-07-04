@@ -27,7 +27,7 @@ initialize() ->
 % Useful for benchmarking.
 
 %Unis : [ [serverName, DictionaryofUser],  [vub, UsersVubDict], [ulb, UsersUlbDict], ...]
-% {user, Name, Subscriptions, Messages}
+% {user, Name, Subscriptions, Subscribers, Messages}  !Name is subscribed to Subscriptions,  Subscribers are subscribed to Name!
 initialize_with(Unis) ->
     lists:map(
         fun(L) ->
@@ -68,10 +68,19 @@ server_actor(Users) ->
             server_actor(Users);
 
     
+        %Assumes that for example Alice registered on vub server wants to
+        %follow Bob registered on ulb server, Alice will send this request
+        %to "her server": vub server
         {Sender, follow, UserName, UserNameToFollow, SpidToFollow} ->
-            NewUsers = follow(Users, UserName, UserNameToFollow, SpidToFollow),
+            UpdatedUsers = follow(Users, UserName, UserNameToFollow, SpidToFollow),
             Sender ! {self(), followed},
-            server_actor(NewUsers);
+            SpidToFollow ! {followed_by, UserNameToFollow, UserName, self()},
+            server_actor(UpdatedUsers);
+
+
+         {_Sender, followed_by, UserNameWhoGetsFollowed, UserNameWhoFollows, SpidWhoFollows} ->
+            UpdatedUsers = followed_by(Users, UserNameWhoGetsFollowed, UserNameWhoFollows, SpidWhoFollows),
+            server_actor(UpdatedUsers);
 
         {Sender, send_message, UserName, MessageText, Timestamp} ->
             NewUsers = store_message(Users, {message, UserName, MessageText, Timestamp}),
@@ -122,20 +131,27 @@ get_profile(Sender, Users, UserName,SpidUser) ->
 
 % Update `Users` so `UserName` follows `UserNameToFollow`.
 follow(Users, UserName, UserNameToFollow, SpidToFollow) ->
-    {user, Name, Subscriptions, Messages} = get_user(UserName, Users),
-    NewUser = {user, Name, sets:add_element([UserNameToFollow, SpidToFollow], Subscriptions), Messages},
-    dict:store(UserName, NewUser, Users).
+    {user, Name, Subscriptions, Subscribers , Messages} = get_user(UserName, Users),
+    UpdatedUser = {user, Name, sets:add_element([UserNameToFollow, SpidToFollow], Subscriptions), Subscribers, Messages},
+    dict:store(UserName, UpdatedUser, Users).
+
+followed_by(Users, UserNameWhoGetsFollowed, UserNameWhoFollows, SpidWhoFollows) ->
+   {user, Name, Subscriptions, Subscribers , Messages} = get_user(UserNameWhoGetsFollowed, Users),
+    UpdatedUser = {user, Name, Subscriptions, sets:add_element([UserNameWhoFollows, SpidWhoFollows], Subscribers), Messages },
+    dict:store(UserNameWhoGetsFollowed,UpdatedUser, Users).
+
+    
 
 % Modify `Users` to store `Message`.
 store_message(Users, Message) ->
     {message, UserName, _MessageText, _Timestamp} = Message,
-    {user, Name, Subscriptions, Messages} = get_user(UserName, Users),
-    NewUser = {user, Name, Subscriptions, Messages ++ [Message]},
+    {user, Name, Subscriptions, Subscribers,  Messages} = get_user(UserName, Users),
+    NewUser = {user, Name, Subscriptions, Subscribers, Messages ++ [Message]},
     dict:store(UserName, NewUser, Users).
 
 % Get all messages by `UserName`.
 get_messages(Users, UserName) ->
-    {user, _, _, Messages} = get_user(UserName, Users),
+    {user, _, _, _Subscribers, Messages} = get_user(UserName, Users),
     Messages.
 
 %Recipient is the Spid that needs the result
@@ -165,7 +181,7 @@ get_messages_users(Recipient, Users, UserNames) ->
 %    sort_messages(UnsortedMessagesForTimeLine).
 
 timeline(Sender, Users, UserName) ->
-    {user, _, Subscriptions, _} = get_user(UserName, Users), 
+    {user, _, Subscriptions, _Subscribers, _} = get_user(UserName, Users), 
     LocalSubscriberNames = [Username || [Username, _Pid] <- sets:to_list(Subscriptions), dict:is_key(Username, Users)],
     RemoteSubscribers    = [[Username, Spid] || [Username, Spid] <- sets:to_list(Subscriptions), not lists:member(Username, LocalSubscriberNames)],
     MessagesLocalSubscribers = 

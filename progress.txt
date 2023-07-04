@@ -1,1 +1,7 @@
 29/06: initialisation and test
+
+keep followed by-list
+when following someone -> update followed-by list of FollowedUserName
+
+users saves a timeline
+when a user posts something -> update all followers' timeline
