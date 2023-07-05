@@ -13,7 +13,7 @@
 -include_lib("eunit/include/eunit.hrl").
 
 -export([initialize/0, initialize_with/1, server_actor/1, typical_session_1/1,
-    typical_session_2/1, timeline/3, get_messages_users/3, get_profile/4]).
+    typical_session_2/1, timeline/3, get_messages_users/3, get_profile/4, follow_testi/0]).
 
 %%- Aide aux activités en ligne
 %% Additional API Functions
@@ -45,7 +45,7 @@ initialize_with(Unis) ->
 % The server actor works like a small database and encapsulates all state of
 % this simple implementation.
 % Users is a dictionary of user names to tuples of the form:
-%     {user, Name, Subscriptions, Messages}
+%     {user, Name, Subscriptions,Subscribers, Messages}
 % TODO add a pid where the user is stored
 % Subscriptions  example: [[john, 8.0.8], [doe, 1.1.1], ...,  [usernameFollowee, spidFollowee])
 % Subscriptions is a set of usernames with their respective server keys i.e. where this username 'lives'.
@@ -55,7 +55,11 @@ server_actor(Users) ->
     receive
         %testing purposes
         {Sender, users} ->
-            Sender ! {Sender, users, Users};
+            Sender ! {self(), users, Users},
+            server_actor(Users);
+        {Sender, user, UserName} ->
+            Sender  ! {self(), user, get_user(UserName, Users)},
+            server_actor(Users);
 
         {Sender, register_user, UserName} ->
             NewUsers = dict:store(UserName, create_user(UserName), Users),
@@ -74,7 +78,7 @@ server_actor(Users) ->
         {Sender, follow, UserName, UserNameToFollow, SpidToFollow} ->
             UpdatedUsers = follow(Users, UserName, UserNameToFollow, SpidToFollow),
             Sender ! {self(), followed},
-            SpidToFollow ! {followed_by, UserNameToFollow, UserName, self()},
+            SpidToFollow ! {self(), followed_by, UserNameToFollow, UserName, self()},
             server_actor(UpdatedUsers);
 
 
@@ -96,7 +100,8 @@ server_actor(Users) ->
             server_actor(Users);
 
         {Sender, get_messages_users, UserNames} ->
-            spawn_link(?MODULE, get_messages_users, [Sender, Users,  UserNames]);
+            spawn_link(?MODULE, get_messages_users, [Sender, Users,  UserNames]),
+            server_actor(Users);
 
 
         {Sender, get_profile, UserName, SpidUser} ->
@@ -111,7 +116,7 @@ server_actor(Users) ->
 
 % Create a new user with `UserName`.
 create_user(UserName) ->
-    {user, UserName, sets:new(), []}.
+    {user, UserName, sets:new(), sets:new(), []}.
 
 % Get user with `UserName` in `Users`.
 % Throws an exception if user does not exist (to help in debugging).
@@ -119,9 +124,17 @@ create_user(UserName) ->
 % you can assume that all users that use the system exist.
 get_user(UserName, Users) ->
     case dict:find(UserName, Users) of
-        {ok, User} -> User;
+        {ok, User} ->  User;
         error -> throw({user_not_found, UserName})
     end.
+
+get_subscribers(User) ->
+    {user, _Name, _Subscriptions, Subscribers, _Messages} = User,
+    Subscribers.
+
+get_subscriptions(User) ->
+    {user, _Name, Subscriptions, _Subscribers, _Messages} = User,
+    Subscriptions.
 
 get_profile(Sender, Users, UserName,SpidUser) ->  
        case dict:find(UserName, Users) of
@@ -132,12 +145,18 @@ get_profile(Sender, Users, UserName,SpidUser) ->
 % Update `Users` so `UserName` follows `UserNameToFollow`.
 follow(Users, UserName, UserNameToFollow, SpidToFollow) ->
     {user, Name, Subscriptions, Subscribers , Messages} = get_user(UserName, Users),
-    UpdatedUser = {user, Name, sets:add_element([UserNameToFollow, SpidToFollow], Subscriptions), Subscribers, Messages},
+    UpdatedSubscriptions = sets:add_element([UserNameToFollow, SpidToFollow], Subscriptions),
+     io:format("updated subscriptions of ~p:  ~p\n", [Name, sets:to_list(UpdatedSubscriptions)]),
+    UpdatedUser = {user, Name, UpdatedSubscriptions, Subscribers, Messages},
+   
     dict:store(UserName, UpdatedUser, Users).
 
 followed_by(Users, UserNameWhoGetsFollowed, UserNameWhoFollows, SpidWhoFollows) ->
+   % io:format("followed_by(Users, ~p, ~p,~p)\n",[UserNameWhoGetsFollowed, UserNameWhoFollows, SpidWhoFollows]),
    {user, Name, Subscriptions, Subscribers , Messages} = get_user(UserNameWhoGetsFollowed, Users),
-    UpdatedUser = {user, Name, Subscriptions, sets:add_element([UserNameWhoFollows, SpidWhoFollows], Subscribers), Messages },
+    UpdatedSubscribers = sets:add_element([UserNameWhoFollows, SpidWhoFollows], Subscribers),
+    io:format("updated subscribers of ~p:  ~p\n", [Name, sets:to_list(UpdatedSubscribers)]),
+    UpdatedUser = {user, Name, Subscriptions, UpdatedSubscribers, Messages }, 
     dict:store(UserNameWhoGetsFollowed,UpdatedUser, Users).
 
     
@@ -231,8 +250,8 @@ sort_messages(Messages) ->
 
 
 bilal_initialize_test() ->
-    UsersVub =  [{user, "Alice", [], []}, {user, "Bob", [], []}],
-    UsersUlb =  [{user, "Charlie", [], []}, {user, "David", [], []}, {user, "Eve", [], []}],
+    UsersVub =  [{user, "Alice", [], []}, {user, "Bob", [], [] ,[]}],
+    UsersUlb =  [{user, "Charlie", [], []}, {user, "David", [], [], []}, {user, "Eve", [], [], []}],
     initialize_with( [[vub,UsersVub], [ulb,UsersUlb]]),
     io:fwrite("ok\n"),
     ulb ! {self(), users},
@@ -244,6 +263,35 @@ bilal_initialize_test() ->
         {_, users, Users2} -> io:format("vub users: ~p", [Users2]), ?assertMatch(Users2,UsersVub);
          _ -> erlang:error(unexpected_message_received) end,
     ?assertMatch(ok,ok).
+
+
+follow_testi() ->
+    initialize_with([[vub, dict:new()], [ulb,dict:new()]]),
+    vub ! {self(), register_user, "Alice"},
+    vub ! {self(), register_user, "Bob"},
+    ulb ! {self(), register_user, "Charlie"},
+    ulb ! {self(), register_user, "Dave"}, 
+    ulb ! {self(), register_user, "Eve"},
+
+    vub ! {self(), follow, "Alice", "Bob", vub},
+    vub ! {self(), follow, "Alice", "Dave", ulb},
+    ulb ! {self(), follow, "Charlie", "Bob", vub},
+    ulb ! {self(), follow, "Dave", "Bob", vub},
+    ulb ! {self(), follow, "Eve", "Bob", vub},
+
+    %Bob gets followed by Alice and Charlie
+    %Alice follows Bob and Dave
+
+    receive 
+        {_Sender, user, {user, Name, Subscriptions,Subscribers, _Messages}} ->
+          ok% io:format("~p follows: ~p \n ~p gets followed by:\n ~p\n\n", [Name,sets:to_list(Subscriptions), Name, sets:to_list(Subscribers)])
+        end,
+    receive 
+        {_SSender, user, {user, NName, SSubscriptions,SSubscribers, _MMessages}} ->
+          ok%  io:format("~p follows: ~p \n ~p gets followed by: ~p\n\n", [NName,sets:to_list(SSubscriptions),NName,sets:to_list(SSubscribers)])
+        end
+    .
+
 
 
 bilal_timeline_test() ->
