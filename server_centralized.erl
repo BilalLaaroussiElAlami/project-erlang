@@ -13,7 +13,7 @@
 -include_lib("eunit/include/eunit.hrl").
 
 -export([initialize/0, initialize_with/1, server_actor/1, typical_session_1/1,
-    typical_session_2/1, timeline/3, get_messages_users/3, get_profile/4, follow_testi/0]).
+    typical_session_2/1, timeline/3, get_messages_users/3, get_profile/4, follow_testi/0, updateFollowers/4]).
 
 %%- Aide aux activités en ligne
 %% Additional API Functions
@@ -84,21 +84,32 @@ server_actor(Users) ->
 
          {_Sender, followed_by, UserNameWhoGetsFollowed, UserNameWhoFollows, SpidWhoFollows} ->
             UpdatedUsers = followed_by(Users, UserNameWhoGetsFollowed, UserNameWhoFollows, SpidWhoFollows),
+            Followers = get_followers(get_user(UserNameWhoGetsFollowed,UpdatedUsers)),
+            io:format("\n\n\nFollowers of ~p: ~p \n\n\n", [UserNameWhoGetsFollowed,  sets:to_list(Followers)]),
             server_actor(UpdatedUsers);
 
         %can be optimised by spawning new process
         {Sender, send_message, UserName, MessageText, Timestamp} ->
-            NewUsers = store_message(Users, {message, UserName, MessageText, Timestamp}),
+            UpdatedUsers = store_message(Users, {message, UserName, MessageText, Timestamp}),
             Sender ! {self(), message_sent},
-            UpdatedUsers = updateFollowers(Users, UserName, MessageText, Timestamp),
-            server_actor(NewUsers);
+            spawn_link(?MODULE, updateFollowers, [UpdatedUsers, UserName, self() , {message, UserName, MessageText,Timestamp}]),
+            server_actor(UpdatedUsers);
 
-        %possible optimisation: keep aldo who followed by for every user, if a user makes a post the people who get follow that user will get informed.
-        %when we fetch the timeline for a user we only need to fetch the messages of the uses who made a post and save it on top their timeline (so we also need to save the
-        %The biggest  efficiency gain will happen if a user follows a lot of users but only a few regularly post while most of them rarely post
+        {_Sender, update_timelines, Usernames, Message} ->
+            UpdatedUsers = updateTimelines(Users,Usernames,Message), 
+            server_actor(UpdatedUsers); 
+
+        %OLD implementation -> will fetch the messages of all subscriptions
         {Sender, get_timeline, UserName} ->
             spawn_link(?MODULE, timeline, [Sender, Users, UserName]),
             Sender ! {self(), simple_message, getting_timeline_please_be_patient},
+            server_actor(Users);
+        
+        %USED , faster implementation. Every user saves a timeline when a follower posts a message the timeline will be updated
+        {Sender, timeline, UserName} ->
+            User = get_user(UserName, Users),
+            TimeLine = get_timeline(User),
+            Sender ! {self(), timeline, UserName, TimeLine},
             server_actor(Users);
 
         {Sender, get_messages_users, UserNames} ->
@@ -119,8 +130,8 @@ server_actor(Users) ->
 % Create a new user with `UserName`.
 create_user(UserName) ->
     {user, UserName, sets:new(),    sets:new(),  [],       []}.
-   %{user, UserName, Subscriptions, Subscribers, Messages, Timeleline}
-   %                            Subscribers" elements: [UserName, Spid]
+   %{user, UserName, Subscriptions, Subscribers, Messages, Timeline}
+   %                            Subscribers" elements: [UserName, Spid]  %Timeline elements {message,Username,MessageText,TimeStamp}
 % Get user with `UserName` in `Users`.
 % Throws an exception if user does not exist (to help in debugging).
 % In your project, you do not need specific error handling for users that do not exist;
@@ -159,16 +170,12 @@ get_profile(Sender, Users, UserName,SpidUser) ->
 follow(Users, UserName, UserNameToFollow, SpidToFollow) ->
     {user, Name, Subscriptions, Subscribers , Messages, Timeline} = get_user(UserName, Users),
     UpdatedSubscriptions = sets:add_element([UserNameToFollow, SpidToFollow], Subscriptions),
-     io:format("updated subscriptions of ~p:  ~p\n", [Name, sets:to_list(UpdatedSubscriptions)]),
     UpdatedUser = {user, Name, UpdatedSubscriptions, Subscribers, Messages, Timeline},
-   
     dict:store(UserName, UpdatedUser, Users).
 
 followed_by(Users, UserNameWhoGetsFollowed, UserNameWhoFollows, SpidWhoFollows) ->
-   % io:format("followed_by(Users, ~p, ~p,~p)\n",[UserNameWhoGetsFollowed, UserNameWhoFollows, SpidWhoFollows]),
    {user, Name, Subscriptions, Subscribers , Messages, Timeline } = get_user(UserNameWhoGetsFollowed, Users),
     UpdatedSubscribers = sets:add_element([UserNameWhoFollows, SpidWhoFollows], Subscribers),
-    io:format("updated subscribers of ~p:  ~p\n", [Name, sets:to_list(UpdatedSubscribers)]),
     UpdatedUser = {user, Name, Subscriptions, UpdatedSubscribers, Messages, Timeline}, 
     dict:store(UserNameWhoGetsFollowed,UpdatedUser, Users).
 
@@ -186,22 +193,45 @@ group_by_spid(Users) ->
         [],
         sets:to_list(Users)),
     UsersGrouped.
+
+
+
 %returns an updated Users list where the timelines of local followers are updated,
 %It' also going to group the "remote" followers by spid, and inform that SPID to 
 %update the timelines of the specific users.
 %Spid is the Spid of UserName
-updateFollowers(Users, UserName, Spid, MessageText, Timestamp) ->
-    Followers = get_subscribers(Users), 
+% !! must return the updated users (local users are updated).
+%were going to handle remote users by sending messages.
+%updateFollowers(Users, UserName, Spid, Message) ->
+%    Followers = get_followers(get_user(Username, Users)),
+%    FollowersGrouped = group_by_spid(Followers),
+%    {_, LocalFollowers} = lists:keyfind(Spid, 1, FollowersGrouped),
+%    RemoteFollowers = list:keydelete(Spid, 1, FollowersGrouped), 
+%    lists:foreach(fun(FollowerName) -> Users =  updateTimeline(Users, FollowerName, Message) end, LocalFollowers),
+%    Users.
 
+updateFollowers(Users, UserName, Spid, Message) ->
+    Followers = get_followers(get_user(UserName, Users)),
+    %io:format("\nFollowers of ~p are ~p \n\n", [UserName, sets:to_list(Followers)]),
+    FollowersGrouped = group_by_spid(Followers),  %sending all usernames to a spid at once instead of one by one results in efficiency gains
+    %io:format("updateFollowers UserName: ~p, Spid: ~p, Message: ~p\n", [UserName,Spid,Message]),
+    %io:format("\nFOLLOWERS GROUPED:\n~p", [FollowersGrouped]),
+    lists:foreach(fun({_Spid,UserNames}) -> 
+        Spid ! {self(), update_timelines, UserNames, Message} end, FollowersGrouped).
+        
 
-
-
-
+%assume message is already in right form (witht timestampt etc.
 updateTimeline(Users, UserName, Message) ->
     {user, Name, Subscriptions, Subscribers, Messages, Timeline } = get_user(UserName, Users),
-    Updated_Timeline = Timeline + [Message],
+    Updated_Timeline = Timeline ++ [Message],
+    io:format("updating Timeline of ~p \n old timeline:\n ~p \n new message:\n~p\n new  timeline:\n~p", [UserName, Timeline, Message, Updated_Timeline]),
     UpdatedUser = {user,Name,Subscriptions,Subscribers,Messages, Updated_Timeline},
     dict:store(UserName, UpdatedUser, Users).
+
+updateTimelines(Users,UserNames, Message)->
+    lists:foreach(fun(Username) -> Users = updateTimeline(Users,Username, Message) end, UserNames),
+    Users.
+
     
 
 % Modify `Users` to store `Message`.
@@ -222,9 +252,13 @@ get_messages_users(Recipient, Users, UserNames) ->
     Recipient ! {self(), messages,  Messages}.
 
 
+timeline(Sender, Users, UserName) ->
+    User = get_user(UserName, Users),
+    TimeLine = get_timeline(User),
+    Sender ! {self(), timeline, TimeLine}.
 
-  
-
+%------------------------------------------------------------------------------------------------------------
+%OLD IMPLEMENTATION but can still be used when we really want the most up to date timeline with high certainety , 
 
 % Generate timeline for `UserName`.
 % 1) Get followees of Username
@@ -232,17 +266,8 @@ get_messages_users(Recipient, Users, UserNames) ->
 % 3) Messegas local followees: get_messages function easy,  Messages remote followees: Don't know yet
 % Sender is pid of process who needs to receive the timeline
 
-%timeline(Sender, Users, UserName) ->
-%    {user, _, Subscriptions, _} = get_user(UserName, Users),
-%    UnsortedMessagesForTimeLine =
-%        lists:foldl(fun(FollowedUserName, AllMessages) ->
-%                        AllMessages ++ get_messages(Users, FollowedUserName)
-%                    end,
-%                    [],
-%                    sets:to_list(Subscriptions)),
-%    sort_messages(UnsortedMessagesForTimeLine).
-
-timeline(Sender, Users, UserName) ->
+%This function will NOT be used, it will get all the messages for Username, (pull based methode)
+timelinePull(Sender, Users, UserName) ->
     {user, _, Subscriptions, _Subscribers, _} = get_user(UserName, Users), 
     LocalSubscriberNames = [Username || [Username, _Pid] <- sets:to_list(Subscriptions), dict:is_key(Username, Users)],
     RemoteSubscribers    = [[Username, Spid] || [Username, Spid] <- sets:to_list(Subscriptions), not lists:member(Username, LocalSubscriberNames)],
@@ -276,6 +301,7 @@ timeline(Sender, Users, UserName) ->
 
     AllMessagesSorted = sort_messages(MessagesLocalSubscribers ++ MessagesRemoteSubscribers),
     Sender ! {self(), timeline, UserName, AllMessagesSorted}.
+%--------------------------------------------------------------------------------------------------------------------------------
 
 % Sort `Messages` from most recent to oldest.
 sort_messages(Messages) ->
@@ -313,26 +339,39 @@ follow_testi() ->
     vub ! {self(), register_user, "Alice"},
     vub ! {self(), register_user, "Bob"},
     ulb ! {self(), register_user, "Charlie"},
-    ulb ! {self(), register_user, "Dave"}, 
-    ulb ! {self(), register_user, "Eve"},
+
 
     vub ! {self(), follow, "Alice", "Bob", vub},
-    vub ! {self(), follow, "Alice", "Dave", ulb},
+    vub ! {self(), follow, "Alice", "Charlie", ulb},
     ulb ! {self(), follow, "Charlie", "Bob", vub},
-    ulb ! {self(), follow, "Dave", "Bob", vub},
-    ulb ! {self(), follow, "Eve", "Bob", vub},
 
-    %Bob gets followed by Alice, Charlie, Dave and Eve
-    %Alice follows Bob and Dave
+    %Bob gets followed by alice and charlie
+    %Alice follows Bob and Charlie
+    %Charlie follows Bob 
+    %Charlie gets followed by Alice
 
+    timer:sleep(1000),
+
+    vub ! {self(), user, "Alice"},
+    ulb ! {self(), user, "Charlie"},
+    vub ! {self(), user , "Bob"},
+
+  %  Followers = get_followers(get_user(UserNameWhoGetsFollowed,UpdatedUsers)),
+  %  io:format("\n\n\nFollowers of ~p: ~p \n\n\n", [UserNameWhoGetsFollowed,  sets:to_list(Followers)]),
+         
     receive 
-        {_Sender, user, {user, Name, Subscriptions,Subscribers, _Messages, _Timeline}} ->
-         io:format("~p follows: ~p \n ~p gets followed by:\n ~p\n\n", [Name,sets:to_list(Subscriptions), Name, sets:to_list(Subscribers)])
+        {_Sender, user, User} ->
+         io:format("\n~p follows: ~p \n ~p gets followed by:\n ~p\n\n", [get_name(User), sets:to_list(get_subscriptions(User)), get_name(User), sets:to_list(get_followers(User))])
        end,
     receive 
-        {_SSender, user, {user, NName, SSubscriptions,SSubscribers, _MMessages, _TTimeline}} ->
-          io:format("~p follows: ~p \n ~p gets followed by: ~p\n\n", [NName,sets:to_list(SSubscriptions),NName,sets:to_list(SSubscribers)])
+        {_SSender, user,User2} ->
+          io:format("\n~p follows: ~p \n ~p gets followed by: ~p\n\n", [get_name(User2), sets:to_list(get_subscriptions(User2)), get_name(User2), sets:to_list(get_followers(User2))])
+        end,
+    receive 
+        {_SSSender, user, User3} ->
+          io:format("\n~p follows: ~p \n ~p gets followed by: ~p\n\n", [get_name(User3), sets:to_list(get_subscriptions(User3)), get_name(User3),sets:to_list(get_followers(User3))])
         end.
+    
     
 
 
@@ -348,13 +387,16 @@ bilal_timeline_test() ->
     vub ! {self(), follow, "Alice", "Bob", vub},
     vub ! {self(), follow, "Alice", "Charlie", ulb},
     vub ! {self(), follow, "Alice", "Dave", ulb},
+    timer:sleep(1000), %makes sure follower lists are updated
     vub ! {self(), send_message, "Bob", "Let's build something amazing together! #BobTheBuilder #ConstructionLife", "07h30"},
     vub ! {self(), send_message, "Bob", "It was a productive work day", "18h00"}, 
     ulb ! {self(), send_message, "Charlie", "I like chocolate", "14h00"},
     ulb ! {self(), send_message, "Charlie", "Hooray, It is my birthday ", "19h00"},
     ulb ! {self(), send_message, "Dave", "I am the best rapper in the UK", "00h30"},
-    vub ! {self(), get_timeline, "Alice"},
-    
+  
+    timer:sleep(5000),
+   
+   % vub ! {self(), timeline, "Alice"}, 
     %  receive
     %     {_, simple_message, MSG} ->
     %       io:format("simple message: ~p\n", [MSG]) end,
@@ -386,7 +428,7 @@ bilal_get_profile_test() ->
     ulb ! {self(), send_message, "Charlie", "Hooray, It is my birthday ", "19h00"},
     ulb ! {self(), send_message, "Dave", "I am the best rapper in the UK", "00h30"},
 
-        
+
     vub ! {self(), get_profile, "Bob", vub}, %get Bob's timeline by sending request to vub server (server where Bob is registered)
     receive 
         {_, profile, _, Profile} ->
