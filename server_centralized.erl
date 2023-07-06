@@ -85,11 +85,12 @@ server_actor(Users) ->
          {_Sender, followed_by, UserNameWhoGetsFollowed, UserNameWhoFollows, SpidWhoFollows} ->
             UpdatedUsers = followed_by(Users, UserNameWhoGetsFollowed, UserNameWhoFollows, SpidWhoFollows),
             Followers = get_followers(get_user(UserNameWhoGetsFollowed,UpdatedUsers)),
-            io:format("\n\n\nFollowers of ~p: ~p \n\n\n", [UserNameWhoGetsFollowed,  sets:to_list(Followers)]),
+            %io:format("\n\n\nFollowers of ~p: ~p \n\n\n", [UserNameWhoGetsFollowed,  sets:to_list(Followers)]),
             server_actor(UpdatedUsers);
 
         %can be optimised by spawning new process
         {Sender, send_message, UserName, MessageText, Timestamp} ->
+            %io:format("A\n"),
             UpdatedUsers = store_message(Users, {message, UserName, MessageText, Timestamp}),
             Sender ! {self(), message_sent},
             spawn_link(?MODULE, updateFollowers, [UpdatedUsers, UserName, self() , {message, UserName, MessageText,Timestamp}]),
@@ -108,7 +109,7 @@ server_actor(Users) ->
         %USED , faster implementation. Every user saves a timeline when a follower posts a message the timeline will be updated
         {Sender, timeline, UserName} ->
             User = get_user(UserName, Users),
-            TimeLine = get_timeline(User),
+            TimeLine = sort_messages(get_timeline(User)),
             Sender ! {self(), timeline, UserName, TimeLine},
             server_actor(Users);
 
@@ -211,26 +212,33 @@ group_by_spid(Users) ->
 %    Users.
 
 updateFollowers(Users, UserName, Spid, Message) ->
+    %io:format("B\n"),
     Followers = get_followers(get_user(UserName, Users)),
     %io:format("\nFollowers of ~p are ~p \n\n", [UserName, sets:to_list(Followers)]),
     FollowersGrouped = group_by_spid(Followers),  %sending all usernames to a spid at once instead of one by one results in efficiency gains
     %io:format("updateFollowers UserName: ~p, Spid: ~p, Message: ~p\n", [UserName,Spid,Message]),
     %io:format("\nFOLLOWERS GROUPED:\n~p", [FollowersGrouped]),
-    lists:foreach(fun({_Spid,UserNames}) -> 
+    lists:foreach(fun({Spid,UserNames}) -> 
         Spid ! {self(), update_timelines, UserNames, Message} end, FollowersGrouped).
         
 
 %assume message is already in right form (witht timestampt etc.
 updateTimeline(Users, UserName, Message) ->
+    %io:format("D\n"),
     {user, Name, Subscriptions, Subscribers, Messages, Timeline } = get_user(UserName, Users),
     Updated_Timeline = Timeline ++ [Message],
-    io:format("updating Timeline of ~p \n old timeline:\n ~p \n new message:\n~p\n new  timeline:\n~p", [UserName, Timeline, Message, Updated_Timeline]),
+   %io:format("updating Timeline of ~p \n old timeline:\n ~p \n new message:\n~p\n updated timeline:\n~p\n", [UserName, Timeline, Message, Updated_Timeline]),
     UpdatedUser = {user,Name,Subscriptions,Subscribers,Messages, Updated_Timeline},
-    dict:store(UserName, UpdatedUser, Users).
+    UpdatedUsers = dict:store(UserName, UpdatedUser, Users),
+    %io:format("E\n"),
+    UpdatedUsers.
 
 updateTimelines(Users,UserNames, Message)->
-    lists:foreach(fun(Username) -> Users = updateTimeline(Users,Username, Message) end, UserNames),
-    Users.
+    %io:format("C\n"),
+    % lists:foreach(fun(Username) -> Users = updateTimeline(Users,Username, Message) end, UserNames),
+    UpdatedUsers = lists:foldl(fun(Username, Users) -> updateTimeline(Users,Username,Message) end,Users, UserNames),
+    %io:format("FFFFFFFFFFFFFFFFFFFFF\n"),
+    UpdatedUsers.
 
     
 
@@ -329,13 +337,14 @@ bilal_initialize_test() ->
         _ -> erlang:error(unexpected_message_received) end,
     vub ! {self(), users},
     receive 
-        {_, users, Users2} -> io:format("vub users: ~p", [Users2]), ?assertMatch(Users2,UsersVub);
+        {_, users, Users2} -> io:format("vub users: ~p\n", [Users2]), ?assertMatch(Users2,UsersVub);
          _ -> erlang:error(unexpected_message_received) end,
     ?assertMatch(ok,ok).
 
 
 follow_testi() ->
     initialize_with([[vub, dict:new()], [ulb,dict:new()]]),
+     io:format("vub ~p, ulb: ~p\n", [whereis(vub), whereis(ulb)]),
     vub ! {self(), register_user, "Alice"},
     vub ! {self(), register_user, "Bob"},
     ulb ! {self(), register_user, "Charlie"},
@@ -378,6 +387,8 @@ follow_testi() ->
 
 bilal_timeline_test() ->
     initialize_with([[vub, dict:new()], [ulb,dict:new()]]),
+
+    io:format("vub ~p, ulb: ~p\n", [whereis(vub), whereis(ulb)]),
     vub ! {self(), register_user, "Alice"},
     vub ! {self(), register_user, "Bob"},
     ulb ! {self(), register_user, "Charlie"},
@@ -390,16 +401,15 @@ bilal_timeline_test() ->
     timer:sleep(1000), %makes sure follower lists are updated
     vub ! {self(), send_message, "Bob", "Let's build something amazing together! #BobTheBuilder #ConstructionLife", "07h30"},
     vub ! {self(), send_message, "Bob", "It was a productive work day", "18h00"}, 
-    ulb ! {self(), send_message, "Charlie", "I like chocolate", "14h00"},
+    ulb ! {self(), send_message, "Charlie", "I like chocolate", "14h00"},  
     ulb ! {self(), send_message, "Charlie", "Hooray, It is my birthday ", "19h00"},
     ulb ! {self(), send_message, "Dave", "I am the best rapper in the UK", "00h30"},
   
-    timer:sleep(5000),
+    
+    timer:sleep(1000),
    
-   % vub ! {self(), timeline, "Alice"}, 
-    %  receive
-    %     {_, simple_message, MSG} ->
-    %       io:format("simple message: ~p\n", [MSG]) end,
+     vub ! {self(), timeline, "Alice"}, 
+      
     receive 
         {_, timeline, Username, TimeLine} -> 
             io:format("Timeline ~p:\n~p\n",[Username,TimeLine]),
@@ -432,13 +442,13 @@ bilal_get_profile_test() ->
     vub ! {self(), get_profile, "Bob", vub}, %get Bob's timeline by sending request to vub server (server where Bob is registered)
     receive 
         {_, profile, _, Profile} ->
-            io:format("Bob's profile:\n ~p", [Profile]),
+            io:format("Bob's profile:\n ~p\n", [Profile]),
         ?assertMatch(Profile, [{message,"Bob","It was a productive work day","18h00"}, {message,"Bob","Let's build something amazing together! #BobTheBuilder #ConstructionLife","07h30"}]) end,
     
      ulb ! {self(), get_profile, "Bob", vub}, %get Bob's timeline by sending request to ulb server 
     receive 
         {_, profile, _, ProfileB} ->
-            io:format("Bob's profile:\n ~p", [Profile]),
+            io:format("Bob's profile:\n ~p\n", [Profile]),
         ?assertMatch(ProfileB, [{message,"Bob","It was a productive work day","18h00"}, {message,"Bob","Let's build something amazing together! #BobTheBuilder #ConstructionLife","07h30"}]) end.
 
 

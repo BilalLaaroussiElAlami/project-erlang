@@ -5,3 +5,71 @@ when following someone -> update followed-by list of FollowedUserName
 
 users saves a timeline
 when a user posts something -> update all followers' timeline
+
+
+
+LINE OF CODE: 
+lists:foreach(fun(Username) -> Users = updateTimeline(Users,Username, Message) end, UserNames)
+
+ERROR:
+=ERROR REPORT==== 6-Jul-2023::20:46:24.885000 ===
+Error in process <0.149.0> with exit value:
+{{badmatch,
+     {dict,2,16,16,8,80,48,
+         {[],[],[],[],[],[],[],[],[],[],[],[],[],[],[],[]},
+         {{[],[],[],[],[],
+           [["Alice"|
+             {user,"Alice",
+                 {set,1,16,16,8,80,48,
+                     {[],[],[],[],[],[],[],[],[],[],[],[],[],[],[],[]},
+                     {{[],[],[],
+                       [["Bob",vub]],
+                       [],[],[],[],[],[],[],[],[],[],[],[]}}},
+                 {set,0,16,16,8,80,48,
+                     {[],[],[],[],[],[],[],[],[],[],[],[],[],[],[],[]},
+                     {{[],[],[],[],[],[],[],[],[],[],[],[],[],[],[],[]}}},
+                 [],
+                 [{message,"Bob",
+                      "Let's build something amazing together! #BobTheBuilder #ConstructionLife",
+                      "07h30"}]}]],
+           [],[],[],[],[],[],[],[],
+           [["Bob"|
+             {user,"Bob",
+                 {set,0,16,16,8,80,48,
+                     {[],[],[],[],[],[],[],[],[],[],[],[],[],[],[],[]},
+                     {{[],[],[],[],[],[],[],[],[],[],[],[],[],[],[],[]}}},
+                 {set,1,16,16,8,80,48,
+                     {[],[],[],[],[],[],[],[],[],[],[],[],[],[],[],[]},
+                     {{[],
+                       [["Alice",<0.149.0>]],
+                       [],[],[],[],[],[],[],[],[],[],[],[],[],[]}}},
+                 [{message,"Bob",
+                      "Let's build something amazing together! #BobTheBuilder #ConstructionLife",
+                      "07h30"}],
+                 []}]],
+           []}}}},
+ [{server_centralized,'-updateTimelines/3-fun-0-',3,
+      [{file,"server_centralized.erl"},{line,238}]},
+  {lists,foreach_1,2,[{file,"lists.erl"},{line,1442}]},
+  {server_centralized,updateTimelines,3,
+      [{file,"server_centralized.erl"},{line,238}]},
+  {server_centralized,server_actor,1,
+      [{file,"server_centralized.erl"},{line,100}]}]}
+
+** exception exit: {badmatch,
+                    {dict,2,16,16,8,80,48,
+                     {[],[],[],[],[],[],[],[],[],[],[],[],[],[],[],[]},
+                     {{[],[],[],[],[],
+                       [["Alice"|
+                         {user,"Alice",
+                          {set,1,16,16,8,...},
+                          {set,0,16,16,...},
+                          [],
+                          [{message,...}]}]],
+                       [],[],[],[],[],[],[],[],
+                       [[[...]|...]],
+                       []}}}}
+     in function  server_centralized:'-updateTimelines/3-fun-0-'/3 (server_centralized.erl, line 238)
+     in call from lists:foreach_1/2 (lists.erl, line 1442)
+     in call from server_centralized:updateTimelines/3 (server_centralized.erl, line 238)
+     in call from server_centralized:server_actor/1 (server_centralized.erl, line 100)
