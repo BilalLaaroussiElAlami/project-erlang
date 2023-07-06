@@ -27,7 +27,7 @@ initialize() ->
 % Useful for benchmarking.
 
 %Unis : [ [serverName, DictionaryofUser],  [vub, UsersVubDict], [ulb, UsersUlbDict], ...]
-% {user, Name, Subscriptions, Subscribers, Messages}  !Name is subscribed to Subscriptions,  Subscribers are subscribed to Name!
+% {user, Name, Subscriptions, Subscribers, Messages, TimeLine}  !Name is subscribed to Subscriptions,  Subscribers are subscribed to Name!
 initialize_with(Unis) ->
     lists:map(
         fun(L) ->
@@ -86,9 +86,11 @@ server_actor(Users) ->
             UpdatedUsers = followed_by(Users, UserNameWhoGetsFollowed, UserNameWhoFollows, SpidWhoFollows),
             server_actor(UpdatedUsers);
 
+        %can be optimised by spawning new process
         {Sender, send_message, UserName, MessageText, Timestamp} ->
             NewUsers = store_message(Users, {message, UserName, MessageText, Timestamp}),
             Sender ! {self(), message_sent},
+            UpdatedUsers = updateFollowers(Users, UserName, MessageText, Timestamp),
             server_actor(NewUsers);
 
         %possible optimisation: keep aldo who followed by for every user, if a user makes a post the people who get follow that user will get informed.
@@ -116,8 +118,9 @@ server_actor(Users) ->
 
 % Create a new user with `UserName`.
 create_user(UserName) ->
-    {user, UserName, sets:new(), sets:new(), []}.
-
+    {user, UserName, sets:new(),    sets:new(),  [],       []}.
+   %{user, UserName, Subscriptions, Subscribers, Messages, Timeleline}
+   %                            Subscribers" elements: [UserName, Spid]
 % Get user with `UserName` in `Users`.
 % Throws an exception if user does not exist (to help in debugging).
 % In your project, you do not need specific error handling for users that do not exist;
@@ -129,12 +132,22 @@ get_user(UserName, Users) ->
     end.
 
 get_subscribers(User) ->
-    {user, _Name, _Subscriptions, Subscribers, _Messages} = User,
+    {user, _Name, _Subscriptions, Subscribers, _Messages, _Timeline} = User,
     Subscribers.
-
+get_followers(User) -> get_subscribers(User).
 get_subscriptions(User) ->
-    {user, _Name, Subscriptions, _Subscribers, _Messages} = User,
+    {user, _Name, Subscriptions, _Subscribers, _Messages, _Timeline} = User,
     Subscriptions.
+get_messages(User) ->
+    {user, _Name, _Subscriptions, _Subscribers, Messages, _Timeline} = User,
+    Messages.
+get_timeline(User) ->
+    {user, _Name, _Subscriptions, _Subscribers, _Messages, Timeline} = User,
+    Timeline.
+get_name(User) ->
+    {user, Name, _Subscriptions, _Subscribers, _Messages, _Timeline} = User,
+    Name.
+
 
 get_profile(Sender, Users, UserName,SpidUser) ->  
        case dict:find(UserName, Users) of
@@ -144,33 +157,63 @@ get_profile(Sender, Users, UserName,SpidUser) ->
 
 % Update `Users` so `UserName` follows `UserNameToFollow`.
 follow(Users, UserName, UserNameToFollow, SpidToFollow) ->
-    {user, Name, Subscriptions, Subscribers , Messages} = get_user(UserName, Users),
+    {user, Name, Subscriptions, Subscribers , Messages, Timeline} = get_user(UserName, Users),
     UpdatedSubscriptions = sets:add_element([UserNameToFollow, SpidToFollow], Subscriptions),
      io:format("updated subscriptions of ~p:  ~p\n", [Name, sets:to_list(UpdatedSubscriptions)]),
-    UpdatedUser = {user, Name, UpdatedSubscriptions, Subscribers, Messages},
+    UpdatedUser = {user, Name, UpdatedSubscriptions, Subscribers, Messages, Timeline},
    
     dict:store(UserName, UpdatedUser, Users).
 
 followed_by(Users, UserNameWhoGetsFollowed, UserNameWhoFollows, SpidWhoFollows) ->
    % io:format("followed_by(Users, ~p, ~p,~p)\n",[UserNameWhoGetsFollowed, UserNameWhoFollows, SpidWhoFollows]),
-   {user, Name, Subscriptions, Subscribers , Messages} = get_user(UserNameWhoGetsFollowed, Users),
+   {user, Name, Subscriptions, Subscribers , Messages, Timeline } = get_user(UserNameWhoGetsFollowed, Users),
     UpdatedSubscribers = sets:add_element([UserNameWhoFollows, SpidWhoFollows], Subscribers),
     io:format("updated subscribers of ~p:  ~p\n", [Name, sets:to_list(UpdatedSubscribers)]),
-    UpdatedUser = {user, Name, Subscriptions, UpdatedSubscribers, Messages }, 
+    UpdatedUser = {user, Name, Subscriptions, UpdatedSubscribers, Messages, Timeline}, 
     dict:store(UserNameWhoGetsFollowed,UpdatedUser, Users).
 
+
+
+%Groups a set of users Set of [Username, Spid], returns a list of tuples {Spid, Usernames} 
+group_by_spid(Users) ->
+    UsersGrouped = lists:foldl(
+        fun([Username, Spid], Acc) ->
+            case lists:keysearch(Spid, 1, Acc) of
+                {value, {Spid, Usernames}} -> [{Spid, [Username | Usernames]} | lists:keydelete(Spid, 1, Acc)];
+                false -> [{Spid, [Username]} | Acc]
+            end
+        end,
+        [],
+        sets:to_list(Users)),
+    UsersGrouped.
+%returns an updated Users list where the timelines of local followers are updated,
+%It' also going to group the "remote" followers by spid, and inform that SPID to 
+%update the timelines of the specific users.
+%Spid is the Spid of UserName
+updateFollowers(Users, UserName, Spid, MessageText, Timestamp) ->
+    Followers = get_subscribers(Users), 
+
+
+
+
+
+updateTimeline(Users, UserName, Message) ->
+    {user, Name, Subscriptions, Subscribers, Messages, Timeline } = get_user(UserName, Users),
+    Updated_Timeline = Timeline + [Message],
+    UpdatedUser = {user,Name,Subscriptions,Subscribers,Messages, Updated_Timeline},
+    dict:store(UserName, UpdatedUser, Users).
     
 
 % Modify `Users` to store `Message`.
 store_message(Users, Message) ->
     {message, UserName, _MessageText, _Timestamp} = Message,
-    {user, Name, Subscriptions, Subscribers,  Messages} = get_user(UserName, Users),
-    NewUser = {user, Name, Subscriptions, Subscribers, Messages ++ [Message]},
+    {user, Name, Subscriptions, Subscribers, Messages, Timeline} = get_user(UserName, Users),
+    NewUser = {user, Name, Subscriptions, Subscribers, Messages ++ [Message], Timeline},
     dict:store(UserName, NewUser, Users).
 
 % Get all messages by `UserName`.
 get_messages(Users, UserName) ->
-    {user, _, _, _Subscribers, Messages} = get_user(UserName, Users),
+    {user, _, _, _Subscribers, Messages, _TimeLine} = get_user(UserName, Users),
     Messages.
 
 %Recipient is the Spid that needs the result
@@ -184,7 +227,7 @@ get_messages_users(Recipient, Users, UserNames) ->
 
 
 % Generate timeline for `UserName`.
-% 1)  Get followees of Username
+% 1) Get followees of Username
 % 2) Divide into local followees and remote followees
 % 3) Messegas local followees: get_messages function easy,  Messages remote followees: Don't know yet
 % Sender is pid of process who needs to receive the timeline
@@ -279,18 +322,18 @@ follow_testi() ->
     ulb ! {self(), follow, "Dave", "Bob", vub},
     ulb ! {self(), follow, "Eve", "Bob", vub},
 
-    %Bob gets followed by Alice and Charlie
+    %Bob gets followed by Alice, Charlie, Dave and Eve
     %Alice follows Bob and Dave
 
     receive 
-        {_Sender, user, {user, Name, Subscriptions,Subscribers, _Messages}} ->
-          ok% io:format("~p follows: ~p \n ~p gets followed by:\n ~p\n\n", [Name,sets:to_list(Subscriptions), Name, sets:to_list(Subscribers)])
-        end,
+        {_Sender, user, {user, Name, Subscriptions,Subscribers, _Messages, _Timeline}} ->
+         io:format("~p follows: ~p \n ~p gets followed by:\n ~p\n\n", [Name,sets:to_list(Subscriptions), Name, sets:to_list(Subscribers)])
+       end,
     receive 
-        {_SSender, user, {user, NName, SSubscriptions,SSubscribers, _MMessages}} ->
-          ok%  io:format("~p follows: ~p \n ~p gets followed by: ~p\n\n", [NName,sets:to_list(SSubscriptions),NName,sets:to_list(SSubscribers)])
-        end
-    .
+        {_SSender, user, {user, NName, SSubscriptions,SSubscribers, _MMessages, _TTimeline}} ->
+          io:format("~p follows: ~p \n ~p gets followed by: ~p\n\n", [NName,sets:to_list(SSubscriptions),NName,sets:to_list(SSubscribers)])
+        end.
+    
 
 
 
