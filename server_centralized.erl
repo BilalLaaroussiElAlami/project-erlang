@@ -421,21 +421,9 @@ bilal_timeline_test() ->
 
 bilal_get_profile_test() ->
     initialize_with([[vub, dict:new()], [ulb,dict:new()]]),
-    vub ! {self(), register_user, "Alice"},
     vub ! {self(), register_user, "Bob"},
-    ulb ! {self(), register_user, "Charlie"},
-    ulb ! {self(), register_user, "Dave"}, 
-    ulb ! {self(), register_user, "Eve"},
-
-    vub ! {self(), follow, "Alice", "Bob", vub},
-    vub ! {self(), follow, "Alice", "Charlie", ulb},
-    vub ! {self(), follow, "Alice", "Dave", ulb},
     vub ! {self(), send_message, "Bob", "Let's build something amazing together! #BobTheBuilder #ConstructionLife", "07h30"},
     vub ! {self(), send_message, "Bob", "It was a productive work day", "18h00"}, 
-    ulb ! {self(), send_message, "Charlie", "I like chocolate", "14h00"},
-    ulb ! {self(), send_message, "Charlie", "Hooray, It is my birthday ", "19h00"},
-    ulb ! {self(), send_message, "Dave", "I am the best rapper in the UK", "00h30"},
-
 
     vub ! {self(), get_profile, "Bob", vub}, %get Bob's timeline by sending request to vub server (server where Bob is registered)
     receive 
