@@ -84,11 +84,9 @@ server_actor(Users) ->
 
          {_Sender, followed_by, UserNameWhoGetsFollowed, UserNameWhoFollows, SpidWhoFollows} ->
             UpdatedUsers = followed_by(Users, UserNameWhoGetsFollowed, UserNameWhoFollows, SpidWhoFollows),
-            Followers = get_followers(get_user(UserNameWhoGetsFollowed,UpdatedUsers)),
-            %io:format("\n\n\nFollowers of ~p: ~p \n\n\n", [UserNameWhoGetsFollowed,  sets:to_list(Followers)]),
             server_actor(UpdatedUsers);
 
-        %can be optimised by spawning new process
+        %can be (slightly) optimised by spawning new process for storing message as well
         {Sender, send_message, UserName, MessageText, Timestamp} ->
             %io:format("A\n"),
             UpdatedUsers = store_message(Users, {message, UserName, MessageText, Timestamp}),
@@ -97,7 +95,7 @@ server_actor(Users) ->
             server_actor(UpdatedUsers);
 
         {_Sender, update_timelines, Usernames, Message} ->
-            UpdatedUsers = updateTimelines(Users,Usernames,Message), 
+            UpdatedUsers = updateTimelines(Users,Usernames,Message), %spawn in new process calculate and send result by message for speed gain
             server_actor(UpdatedUsers); 
 
         %OLD implementation -> will fetch the messages of all subscriptions
