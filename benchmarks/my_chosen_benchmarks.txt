@@ -1,0 +1,13 @@
+get_profile is always fast
+get_timeline is always fast
+get_timeline_pull can be slow
+send_message can be slow
+
+
+experiment 1
+change number of erlang threads -> measure speedup of get_profile
+experiment 2
+getting timeline push based vs pull based implementation (vs centralized implementation)
+measure difference in speed and difference in consistency
+experiment 3
+

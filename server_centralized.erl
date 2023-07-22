@@ -15,9 +15,8 @@
 -export([initialize/0, initialize_with/1, server_actor/1, typical_session_1/1,
     typical_session_2/1, timeline/3, get_messages_users/3, get_profile/4, follow_testi/0, updateFollowers/4, timeline_pull/3]).
 
-%%- Aide aux activités en ligne
+%% Aide aux activités en ligne
 %% Additional API Functions
-%%
 
 % Start server.
 initialize() ->
@@ -71,7 +70,6 @@ server_actor(Users) ->
             Sender ! {self(), logged_in},
             server_actor(Users);
 
-    
         %Assumes that for example Alice registered on vub server wants to
         %follow Bob registered on ulb server, Alice will send this request
         %to "her server": vub server
@@ -87,9 +85,7 @@ server_actor(Users) ->
             server_actor(UpdatedUsers);
 
         %can be (slightly) optimised by spawning new process for storing message as well (TODO?)
-        %sending
         {Sender, send_message, UserName, MessageText, Timestamp} ->
-            %io:format("A\n"),
             UpdatedUsers = store_message(Users, {message, UserName, MessageText, Timestamp}),
             Sender ! {self(), message_sent},
             spawn_link(?MODULE, updateFollowers, [UpdatedUsers, UserName, self() , {message, UserName, MessageText,Timestamp}]),
