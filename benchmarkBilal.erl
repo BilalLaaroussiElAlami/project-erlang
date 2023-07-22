@@ -1,4 +1,4 @@
--module(benchmark).
+-module(benchmarkBilal).
 
 -export([test_fib/0, test_timeline/0, test_send_message/0]).
 
@@ -104,8 +104,7 @@ initialize_server() ->
     io:format("Number of users per server : ~p~n", [NUmberOfUsersPerServer]),
     io:format("Number of subscriptions: ~p~n",     [NumberOfSubscriptions]),
     io:format("Number of messages: ~p~n",          [NumberOfMessages]),
-    io:format("~n"),
-     
+    
     UserNames = [integer_to_list(I) || I <- lists:seq(1, NumberOfUsers)],
    
 

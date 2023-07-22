@@ -1,24 +1,30 @@
 -module(playground).
--export([main/0, group_by_spid/1]).
+-include_lib("eunit/include/eunit.hrl").
+-export([main/0, split/2, make_list/3]).
 
 main() ->
-    Followers = sets:from_list([["A", 2], ["C", 3] ,["B", 2], ["D", 3]]),
-    Grouped = group_by_spid(Followers),
-    lists:foreach(fun({Spid, Usernames}) -> 
-        io:format("Spid ~p\nCorrespinding UserNames ~p \n", [Spid,Usernames])
-        end, Grouped).
+    Split = split(100,10),
+    io:format(" result ~p\n", [Split]),
+    Sum41TO50 = lists:foldl(fun(N, Acc) -> N + Acc end, 0,  lists:nth(2,(lists:nth(5, Split)))),
+    io:format(" sum 41 to 50 ~p\n", [Sum41TO50]).
 
 
-%!!!!!!!!!!!!!!!!!!!!!!!!!KEEP!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-%Groups a set of users Set of [Username, Spid], returns a list of tuples {Spid, Usernames} 
-group_by_spid(Users) ->
-    UsersGrouped = lists:foldl(
-        fun([Username, Spid], Acc) ->
-            case lists:keysearch(Spid, 1, Acc) of
-                {value, {Spid, Usernames}} -> [{Spid, [Username | Usernames]} | lists:keydelete(Spid, 1, Acc)];
-                false -> [{Spid, [Username]} | Acc]
-            end
-        end,
-        [],
-        sets:to_list(Users)),
-    UsersGrouped.
+split(N_users,N_servers) ->
+    Part = N_users div N_servers,
+    Servers = lists:seq(1, N_servers),
+    Result = lists:map(
+        fun(Server) ->
+            Begin = (Server-1)*Part + 1,
+            End   = Server*Part,
+            io:format("begin: ~p end: ~p\n",[Begin,End]),
+            [Server, lists:seq(round(Begin), round(End))] end,
+        Servers
+    ),
+    Result.
+
+make_list(Start,Stop, Acc) ->
+    if
+    (Start == Stop) -> Acc;
+    true -> make_list(Start+1,Stop, [Start | Acc]) end.
+
+

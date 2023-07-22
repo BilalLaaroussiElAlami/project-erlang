@@ -10,4 +10,6 @@ experiment 2
 getting timeline push based vs pull based implementation (vs centralized implementation)
 measure difference in speed and difference in consistency
 experiment 3
+Change one of these:The number of server instances, users per server instance, how users are spread over instances.
+Measure speed of somethin
 
