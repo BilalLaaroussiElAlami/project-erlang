@@ -99,30 +99,15 @@ initialize_server() ->
     NumberOfSubscriptions = 25,
     NumberOfMessages = 10,
     io:format("Parameters:~n"),
-    io:format("Number of users: ~p~n", [NumberOfUsers]), 
-    io:format("Number of servers: ~p~n", [NumberOfServers]),
+    io:format("Number of users: ~p~n",             [NumberOfUsers]), 
+    io:format("Number of servers: ~p~n",           [NumberOfServers]),
     io:format("Number of users per server : ~p~n", [NUmberOfUsersPerServer]),
-    io:format("Number of subscriptions: ~p~n", [NumberOfSubscriptions]),
-    io:format("Number of messages: ~p~n", [NumberOfMessages]),
+    io:format("Number of subscriptions: ~p~n",     [NumberOfSubscriptions]),
+    io:format("Number of messages: ~p~n",          [NumberOfMessages]),
     io:format("~n"),
-    % Generate user names: just the numbers from 1 to NumberOfUsers, as strings.
-    % Note: integer_to_list convert an integer to a string, e.g. 123 to "123".
-    % Note: the syntax [F(X) || X <- L] is a list comprehension. It generates a list
-    % by applying F to each element of L. It is equivalent to
-    % lists:map(fun (X) -> F(X) end, L).
+     
     UserNames = [integer_to_list(I) || I <- lists:seq(1, NumberOfUsers)],
-    % Generate users dict.
-    Users = dict:from_list(lists:map(fun (Name) ->
-        % Random subscriptions.
-        Subscriptions = [pick_random(UserNames) || _ <- lists:seq(1, NumberOfSubscriptions)],
-        % Random messages.
-        Messages = [generate_message(Name, I) || I <- lists:seq(1, NumberOfMessages)],
-        User = {user, Name, sets:from_list(Subscriptions), Messages},
-        {Name, User} % {key, value} for dict.
-        end,
-        UserNames)),
-    ServerPid = server_centralized:initialize_with(Users),
-    {ServerPid, UserNames}.
+   
 
 % Pick a random element from a list.
 pick_random(List) ->

@@ -12,7 +12,7 @@
 
 -include_lib("eunit/include/eunit.hrl").
 
--export([initialize/0, initialize_with/1, server_actor/1, typical_session_1/1,
+-export([initialize/0, initialize_with/1,initialize_alternative/1, server_actor/1, typical_session_1/1,
     typical_session_2/1, timeline/3, get_messages_users/3, get_profile/4, follow_testi/0, updateFollowers/4, timeline_pull/3]).
 
 %% Aide aux activités en ligne
@@ -36,10 +36,17 @@ initialize_with(Unis) ->
             register(UniName, Spid),
             Spid end, Unis).
 
-   % ServerPids = spawn_link(?MODULE, server_actor, [Users]),
-   % catch unregister(server_actor),
-   % register(server_actor, ServerPid),
-   % ServerPid.
+%initializes with uni names and usernames
+%Unis : [ [serverName, ListOfUsernames],  [vub, Usersnamesuvb], [ulb, UsernamesUlb], ...]
+initialize_alternative(Unis) ->
+    lists:map(
+        fun(L) ->
+            [UniName, UserNamesofUni] = L,
+            Users =  lists:foldl(fun(UserName,OldDict) -> dict:store(UserName, create_user(UserName), OldDict) end, dict:new(), UserNamesofUni),    
+            Spid = spawn_link(?MODULE, server_actor, [Users]),
+            catch(unregister(UniName)),
+            register(UniName, Spid),
+            Spid end, Unis).
 
 % The server actor works like a small database and encapsulates all state of
 % this simple implementation.
@@ -329,6 +336,23 @@ bilal_initialize_test() ->
          _ -> erlang:error(unexpected_message_received) end,
     ?assertMatch(ok,ok).
 
+bilal_initialize_alternative_test() -> 
+    UsersVub = lists:foldl(fun(UserName,OldDict) -> dict:store(UserName, create_user(UserName), OldDict) end, dict:new(), ["Alice", "Bob"]),
+    UsersUlb = lists:foldl(fun(UserName,OldDict) -> dict:store(UserName, create_user(UserName), OldDict) end, dict:new(), ["Charlie", "David", "Eve"]),    
+
+    initialize_alternative([[vub,["Alice", "Bob"]], [ulb,["Charlie", "David", "Eve"]]]),
+    ulb ! {self(), users},
+    receive 
+        {_, users, Users}  ->  io:format("ulb users: ~p\n",[Users]),  ?assertMatch(Users,UsersUlb);
+        _ -> erlang:error(unexpected_message_received) end,
+    vub ! {self(), users},
+    receive 
+        {_, users, Users2} -> io:format("vub users: ~p\n", [Users2]), ?assertMatch(Users2,UsersVub);
+         _ -> erlang:error(unexpected_message_received) end,
+    ?assertMatch(ok,ok).
+
+
+
 
 follow_testi() ->
     initialize_with([[vub, dict:new()], [ulb,dict:new()]]),
@@ -366,10 +390,6 @@ follow_testi() ->
           io:format("\n~p follows: ~p \n ~p gets followed by: ~p\n\n", [get_name(User3), sets:to_list(get_subscriptions(User3)), get_name(User3),sets:to_list(get_followers(User3))])
         end.
     
-    
-
-
-
 bilal_timeline_test() ->
     initialize_with([[vub, dict:new()], [ulb,dict:new()]]),
 
