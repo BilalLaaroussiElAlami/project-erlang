@@ -13,7 +13,7 @@
 -include_lib("eunit/include/eunit.hrl").
 
 -export([initialize/0, initialize_with/1, server_actor/1, typical_session_1/1,
-    typical_session_2/1, timeline/3, get_messages_users/3, get_profile/4, follow_testi/0, updateFollowers/4]).
+    typical_session_2/1, timeline/3, get_messages_users/3, get_profile/4, follow_testi/0, updateFollowers/4, timeline_pull/3]).
 
 %%- Aide aux activités en ligne
 %% Additional API Functions
@@ -86,7 +86,8 @@ server_actor(Users) ->
             UpdatedUsers = followed_by(Users, UserNameWhoGetsFollowed, UserNameWhoFollows, SpidWhoFollows),
             server_actor(UpdatedUsers);
 
-        %can be (slightly) optimised by spawning new process for storing message as well
+        %can be (slightly) optimised by spawning new process for storing message as well (TODO?)
+        %sending
         {Sender, send_message, UserName, MessageText, Timestamp} ->
             %io:format("A\n"),
             UpdatedUsers = store_message(Users, {message, UserName, MessageText, Timestamp}),
@@ -99,8 +100,9 @@ server_actor(Users) ->
             server_actor(UpdatedUsers); 
 
         %OLD implementation -> will fetch the messages of all subscriptions
-        {Sender, get_timeline, UserName} ->
-            spawn_link(?MODULE, timeline, [Sender, Users, UserName]),
+        %We will have a more correct result but we will get it slower. 
+        {Sender, get_timeline_pull, UserName} ->
+            spawn_link(?MODULE, timeline_pull, [Sender, Users, UserName]),
             Sender ! {self(), simple_message, getting_timeline_please_be_patient},
             server_actor(Users);
         
@@ -114,7 +116,6 @@ server_actor(Users) ->
         {Sender, get_messages_users, UserNames} ->
             spawn_link(?MODULE, get_messages_users, [Sender, Users,  UserNames]),
             server_actor(Users);
-
 
         {Sender, get_profile, UserName, SpidUser} ->
             spawn_link(?MODULE, get_profile, [Sender, Users, UserName, SpidUser]),
@@ -158,11 +159,11 @@ get_name(User) ->
     {user, Name, _Subscriptions, _Subscribers, _Messages, _Timeline} = User,
     Name.
 
-
+%The profile is stored for every user, so this operation doesn't calculate only fetches, so It should be fast
 get_profile(Sender, Users, UserName,SpidUser) ->  
        case dict:find(UserName, Users) of
          {ok,_User} ->  Sender ! {self(), profile, UserName, sort_messages(get_messages(Users, UserName))};  %If user is stored at the local instance itself
-         _ ->  SpidUser ! {Sender, get_profile, UserName, SpidUser}
+         _ ->  SpidUser ! {Sender, get_profile, UserName, SpidUser}  %Is user is stored at another instance ->  simply reroute the request to to the right instance
     end.
 
 % Update `Users` so `UserName` follows `UserNameToFollow`.
@@ -210,32 +211,24 @@ group_by_spid(Users) ->
 %    Users.
 
 updateFollowers(Users, UserName, Spid, Message) ->
-    %io:format("B\n"),
     Followers = get_followers(get_user(UserName, Users)),
-    %io:format("\nFollowers of ~p are ~p \n\n", [UserName, sets:to_list(Followers)]),
-    FollowersGrouped = group_by_spid(Followers),  %sending all usernames to a spid at once instead of one by one results in efficiency gains
-    %io:format("updateFollowers UserName: ~p, Spid: ~p, Message: ~p\n", [UserName,Spid,Message]),
-    %io:format("\nFOLLOWERS GROUPED:\n~p", [FollowersGrouped]),
+    FollowersGrouped = group_by_spid(Followers), 
+    %TODO shadowed variabel
     lists:foreach(fun({Spid,UserNames}) -> 
         Spid ! {self(), update_timelines, UserNames, Message} end, FollowersGrouped).
         
 
 %assume message is already in right form (witht timestampt etc.
 updateTimeline(Users, UserName, Message) ->
-    %io:format("D\n"),
     {user, Name, Subscriptions, Subscribers, Messages, Timeline } = get_user(UserName, Users),
     Updated_Timeline = Timeline ++ [Message],
-   %io:format("updating Timeline of ~p \n old timeline:\n ~p \n new message:\n~p\n updated timeline:\n~p\n", [UserName, Timeline, Message, Updated_Timeline]),
     UpdatedUser = {user,Name,Subscriptions,Subscribers,Messages, Updated_Timeline},
     UpdatedUsers = dict:store(UserName, UpdatedUser, Users),
-    %io:format("E\n"),
     UpdatedUsers.
 
 updateTimelines(Users,UserNames, Message)->
-    %io:format("C\n"),
-    % lists:foreach(fun(Username) -> Users = updateTimeline(Users,Username, Message) end, UserNames),
-    UpdatedUsers = lists:foldl(fun(Username, Users) -> updateTimeline(Users,Username,Message) end,Users, UserNames),
-    %io:format("FFFFFFFFFFFFFFFFFFFFF\n"),
+    %TODO Users shadowed
+    UpdatedUsers = lists:foldl(fun(Username, Users) -> updateTimeline(Users,Username,Message) end,Users, UserNames), 
     UpdatedUsers.
 
     
@@ -258,6 +251,7 @@ get_messages_users(Recipient, Users, UserNames) ->
     Recipient ! {self(), messages,  Messages}.
 
 
+%The timeline for every user is stored, like get_profile timeline is a fetch operation so it should also be fast
 timeline(Sender, Users, UserName) ->
     User = get_user(UserName, Users),
     TimeLine = get_timeline(User),
@@ -273,8 +267,8 @@ timeline(Sender, Users, UserName) ->
 % Sender is pid of process who needs to receive the timeline
 
 %This function will NOT be used, it will get all the messages for Username, (pull based methode)
-timelinePull(Sender, Users, UserName) ->
-    {user, _, Subscriptions, _Subscribers, _} = get_user(UserName, Users), 
+timeline_pull(Sender, Users, UserName) ->
+    {user, _Name, Subscriptions, _Subscribers, _Messages, _Timeline} = get_user(UserName, Users),
     LocalSubscriberNames = [Username || [Username, _Pid] <- sets:to_list(Subscriptions), dict:is_key(Username, Users)],
     RemoteSubscribers    = [[Username, Spid] || [Username, Spid] <- sets:to_list(Subscriptions), not lists:member(Username, LocalSubscriberNames)],
     MessagesLocalSubscribers = 
@@ -306,7 +300,7 @@ timelinePull(Sender, Users, UserName) ->
             RemoteSubscribersGrouped),
 
     AllMessagesSorted = sort_messages(MessagesLocalSubscribers ++ MessagesRemoteSubscribers),
-    Sender ! {self(), timeline, UserName, AllMessagesSorted}.
+    Sender ! {self(), timeline_pull, UserName, AllMessagesSorted}.
 %--------------------------------------------------------------------------------------------------------------------------------
 
 % Sort `Messages` from most recent to oldest.
@@ -363,9 +357,6 @@ follow_testi() ->
     ulb ! {self(), user, "Charlie"},
     vub ! {self(), user , "Bob"},
 
-  %  Followers = get_followers(get_user(UserNameWhoGetsFollowed,UpdatedUsers)),
-  %  io:format("\n\n\nFollowers of ~p: ~p \n\n\n", [UserNameWhoGetsFollowed,  sets:to_list(Followers)]),
-         
     receive 
         {_Sender, user, User} ->
          io:format("\n~p follows: ~p \n ~p gets followed by:\n ~p\n\n", [get_name(User), sets:to_list(get_subscriptions(User)), get_name(User), sets:to_list(get_followers(User))])
@@ -391,8 +382,6 @@ bilal_timeline_test() ->
     vub ! {self(), register_user, "Bob"},
     ulb ! {self(), register_user, "Charlie"},
     ulb ! {self(), register_user, "Dave"}, 
-    ulb ! {self(), register_user, "Eve"},
-
     vub ! {self(), follow, "Alice", "Bob", vub},
     vub ! {self(), follow, "Alice", "Charlie", ulb},
     vub ! {self(), follow, "Alice", "Dave", ulb},
@@ -403,15 +392,26 @@ bilal_timeline_test() ->
     ulb ! {self(), send_message, "Charlie", "Hooray, It is my birthday ", "19h00"},
     ulb ! {self(), send_message, "Dave", "I am the best rapper in the UK", "00h30"},
   
-    
     timer:sleep(1000),
-   
-     vub ! {self(), timeline, "Alice"}, 
-      
+    vub ! {self(), timeline, "Alice"},  
+    io:format("TESTING PUSH BASED IMPLEMENTATION\n"),    
     receive 
         {_, timeline, Username, TimeLine} -> 
             io:format("Timeline ~p:\n~p\n",[Username,TimeLine]),
             ?assertMatch(TimeLine, 
+                [{message,"Charlie","Hooray, It is my birthday ","19h00"},
+                 {message,"Bob","It was a productive work day","18h00"},
+                 {message,"Charlie","I like chocolate","14h00"},
+                 {message,"Bob","Let's build something amazing together! #BobTheBuilder #ConstructionLife","07h30"},
+                 {message,"Dave","I am the best rapper in the UK","00h30"}])
+        end,
+    
+    vub ! {self(), get_timeline_pull, "Alice"},  
+    io:format("TESTING PULL BASED IMPLEMENTATION, RESULT SHOULD BE THE SAME!\n"),    
+    receive 
+        {_, timeline_pull, Usernname, TimeLinePulled} -> 
+            io:format("Timeline Pulled ~p:\n~p\n",[Usernname,TimeLinePulled]),
+            ?assertMatch(TimeLinePulled, 
                 [{message,"Charlie","Hooray, It is my birthday ","19h00"},
                  {message,"Bob","It was a productive work day","18h00"},
                  {message,"Charlie","I like chocolate","14h00"},
@@ -434,7 +434,7 @@ bilal_get_profile_test() ->
      ulb ! {self(), get_profile, "Bob", vub}, %get Bob's timeline by sending request to ulb server 
     receive 
         {_, profile, _, ProfileB} ->
-            io:format("Bob's profile:\n ~p\n", [Profile]),
+            io:format("Bob's profile:\n ~p\n", [ProfileB]),
         ?assertMatch(ProfileB, [{message,"Bob","It was a productive work day","18h00"}, {message,"Bob","Let's build something amazing together! #BobTheBuilder #ConstructionLife","07h30"}]) end.
 
 
