@@ -343,11 +343,21 @@ bilal_initialize_alternative_test() ->
     initialize_alternative([[vub,["Alice", "Bob"]], [ulb,["Charlie", "David", "Eve"]]]),
     ulb ! {self(), users},
     receive 
-        {_, users, Users}  ->  io:format("ulb users: ~p\n",[Users]),  ?assertMatch(Users,UsersUlb);
+        {_, users, Users}  ->  
+            io:format("ULB users: ~p\n",[Users]),
+            io:format("vub users: ~p\n", [Users]), 
+            io:format("Charlie: ~p\n",[get_user("Charlie",Users)]),
+            io:format("David: ~p\n",[get_user("David",Users)]),
+            io:format("Eve: ~p\n",[get_user("Eve",Users)]),
+            ?assertMatch(Users,UsersUlb);
         _ -> erlang:error(unexpected_message_received) end,
     vub ! {self(), users},
     receive 
-        {_, users, Users2} -> io:format("vub users: ~p\n", [Users2]), ?assertMatch(Users2,UsersVub);
+        {_, users, Users2} -> 
+            io:format("VUB users: ~p\n",[Users2]),
+            io:format("Alice: ~p\n",[get_user("Alice",Users2)]),
+            io:format("Bob: ~p\n",[get_user("Bob",Users2)]),       
+            ?assertMatch(Users2,UsersVub);
          _ -> erlang:error(unexpected_message_received) end,
     ?assertMatch(ok,ok).
 
