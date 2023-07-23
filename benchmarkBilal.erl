@@ -1,6 +1,6 @@
 -module(benchmarkBilal).
 
--export([test_fib/0, test_timeline/0, test_send_message/0, pick_random_n/2, split/2, initialize_server/0, test_server_initialization/0, print_user/1]).
+-export([test_fib/0, test_timeline/0, test_send_message/0, pick_random_n/2, split/2, initialize_server/0, test_server_initialization/0, test_send_message_bilal/0]).
 
 %% Fibonacci
 fib(0) -> 1;
@@ -88,15 +88,17 @@ test_fib_benchmark() ->
 % Note that this code depends on the implementation of the server. You will need to
 % change it if you change the representation of the data in the server.
 
-%5 server instances , 1000 users per server, every user follow 50 user, evenly distributed over each server instance (10 per server instance)
+
+
+%---------------------------------BEGIN INITIALISATION CODE------------------------------------------
 initialize_server() ->
     % Seed random number generator to get reproducible results.
     rand:seed_s(exsplus, {0, 0, 0}),
     % Parameters
     NumberOfServers = 5,
-    NumberOfUsers = 10,
+    NumberOfUsers = 5000,
     NUmberOfUsersPerServer = NumberOfUsers div NumberOfServers,
-    NumberOfSubscriptions = 5,
+    NumberOfSubscriptions = 25,
     % Users follow evenly over servers
     NumberOfSubscriptionsPerServer = NumberOfSubscriptions div NumberOfServers,
     NumberOfMessages = 2,
@@ -111,9 +113,9 @@ initialize_server() ->
     server_centralized:initialize_alternative(UnisUserNames),
     everyone_follow(UnisUserNames, NumberOfSubscriptionsPerServer),
     send_messages(UnisUserNames, NumberOfMessages),
-    io:fwrite("finished initialisation benchmark tests can start ~n").
+    io:fwrite("finished initialisation benchmark tests can start ~n"),
+    UnisUserNames.
 
-   
 %All users in all unis follow N random users per each uni
 everyone_follow(UnisUsers, N) ->
     lists:foreach(
@@ -174,7 +176,7 @@ split(N_users,N_servers) ->
     ),
     Result.
 
-
+%This function will make every user send N messages
 send_messages(UnisUsernames, N_messages) ->
     lists:foreach(
         fun(UniUserNames) ->
@@ -192,11 +194,8 @@ send_messages(UnisUsernames, N_messages) ->
             UnisUsernames
     ).
 
-
-
 send_message(ServerPid, UserName, MessageText) ->
     ServerPid ! {self(), send_message, UserName, MessageText, os:system_time()}.
-
 
 % Pick a random element from a list.
 pick_random(List) ->
@@ -211,6 +210,21 @@ generate_message(ServerPid, UserName, I) ->
     %io:format("ServerPid ~p UserName ~p I ~p ~n", [ServerPid,UserName,I]),
     Text = "Message " ++ integer_to_list(I) ++ " from " ++ UserName, %++ "located at" ++ ServerPid,
     {message, UserName, Text, os:system_time()}.
+
+%--------------------------------- END INITIALISATION CODE -----------------------------------------
+
+%--------------------------------- BEGIN EXPERIMENT 1 ----------------------------------------------
+%GOAL: measure the latency of send_message depending of the amount of erlang threads
+test_send_message_bilal() ->
+    UnisUserNames = initialize_server(),
+    MessagesSentPerUser = 5,
+    run_benchmark("send_message",
+        fun () ->
+            send_messages(UnisUserNames, MessagesSentPerUser)
+        end,
+        30).
+
+
 
 % Get timeline of 10000 users (repeated 30 times).
 test_timeline() ->
