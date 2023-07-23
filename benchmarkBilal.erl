@@ -1,6 +1,6 @@
 -module(benchmarkBilal).
 
--export([test_fib/0, test_timeline/0, test_send_message/0]).
+-export([test_fib/0, test_timeline/0, test_send_message/0, pick_random_n/2, split/2]).
 
 %% Fibonacci
 fib(0) -> 1;
@@ -108,11 +108,47 @@ initialize_server() ->
     io:format("Number of messages: ~p~n",          [NumberOfMessages]),
     UnisUserNames = split(NumberOfUsers,NumberOfServers),
     server_centralized:initialize_alternative(UnisUserNames),
-    lists:map(
-        fun(UniUsernames) ->
-            [Uni, Usernames] = UnisUserNames, 
+   
 
-    )
+everyone_follow(UnisUsers, N) ->
+    lists:foreach(
+        fun(UniUsers) ->
+            [Uni,Users] = UniUsers,
+            lists:foreach(
+                fun(User) ->
+                    RandomUsers = pick_random_users_over_unis(UnisUsers, N), % each User follows N random Users per Uni
+                    
+
+                )
+
+            end,
+        UnisUsers
+        )
+everyone_in_uni_follows(UniUsers, UnisUsers, N) ->
+    [Uni,Users] = UniUsers,
+    lists:foreach(
+        fun(User) ->
+            user_follow_random_n(PidFollower, UsernameFollower, UnisUsers, N) ->
+        )
+
+
+%UsernameFollower follows N random users per server
+user_follow_random_n(PidFollower, UsernameFollower, UnisUsers, N) ->
+    FolloweesPerUni = pick_random_users_over_unis(UnisUsers, N), 
+    lists:foreach(
+        fun(FolloweesUni) ->
+            [Uni, Followees] = FolloweesUni,
+            lists:foreach(
+                fun(Followee) ->
+                    follow(PidFollower,UsernameFollower,Followee,Uni) end,
+                    Followees
+                )
+            end,
+            FolloweesPerUni
+        ).
+
+
+
 
 %picks random UsersPerUni Users per Uni, each associated with the uni
 pick_random_users_over_unis(UnisUsers, UsersPerUni) ->
@@ -126,7 +162,7 @@ pick_random_users_over_unis(UnisUsers, UsersPerUni) ->
 
 follow(PidFollower, UsernameFollower, UserNameFollowee, PidFollowee) ->
     %vub ! {self(), follow, "Alice", "Bob", vub},
-    PidFollower ! {self(), follow, UsernameFollower, UserNameFollowee, PidFollowee}
+    PidFollower ! {self(), follow, UsernameFollower, UserNameFollowee, PidFollowee}.
    
 
 %assumes N_Users are evenly dividable betweeb N_servers
@@ -149,7 +185,7 @@ pick_random(List) ->
 
 % Pick n random elements from list
 pick_random_n(List, N) ->
-    [pick_random(List) || _ <- lists:seq(1, N)]
+    [pick_random(List) || _ <- lists:seq(1, N)].
 
 % Generate a random message `I` for `UserName`.
 generate_message(UserName, I) ->
