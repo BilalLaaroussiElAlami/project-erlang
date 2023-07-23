@@ -60,10 +60,14 @@ initialize_alternative(Unis) ->
 server_actor(Users) ->
     receive
         %testing purposes
+        {Sender, ping} ->
+            io:fwrite("pinged~n"),
+            Sender ! {self(), pong};
         {Sender, users} ->
             Sender ! {self(), users, Users},
             server_actor(Users);
         {Sender, user, UserName} ->
+            io:fwrite("receive"),
             Sender  ! {self(), user, get_user(UserName, Users)},
             server_actor(Users);
 

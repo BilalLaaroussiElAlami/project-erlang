@@ -1,6 +1,6 @@
 -module(benchmarkBilal).
 
--export([test_fib/0, test_timeline/0, test_send_message/0, pick_random_n/2, split/2, initialize_server/0]).
+-export([test_fib/0, test_timeline/0, test_send_message/0, pick_random_n/2, split/2, initialize_server/0, test_server_initialization/0]).
 
 %% Fibonacci
 fib(0) -> 1;
@@ -94,12 +94,12 @@ initialize_server() ->
     rand:seed_s(exsplus, {0, 0, 0}),
     % Parameters
     NumberOfServers = 5,
-    NumberOfUsers = 5000,
+    NumberOfUsers = 10,
     NUmberOfUsersPerServer = NumberOfUsers div NumberOfServers,
-    NumberOfSubscriptions = 50,
+    NumberOfSubscriptions = 5,
     % Users follow evenly over servers
     NumberOfSubscriptionsPerServer = NumberOfSubscriptions div NumberOfServers,
-    NumberOfMessages = 10,
+    NumberOfMessages = 2,
     io:format("Parameters:~n"),
     io:format("Number of users: ~p~n",             [NumberOfUsers]), 
     io:format("Number of servers: ~p~n",           [NumberOfServers]),
@@ -110,7 +110,8 @@ initialize_server() ->
     UnisUserNames = split(NumberOfUsers,NumberOfServers),
     server_centralized:initialize_alternative(UnisUserNames),
     everyone_follow(UnisUserNames, NumberOfSubscriptionsPerServer),
-    send_messages(UnisUserNames, NumberOfMessages).
+    send_messages(UnisUserNames, NumberOfMessages),
+    io:fwrite("finished initialisation benchmark tests can start ~n").
 
    
 %All users in all unis follow N random users per each uni
@@ -234,3 +235,29 @@ test_send_message() ->
             lists:seq(1, 10000))
         end,
         30).
+
+
+%This function tests the server initialisation because the initialization is a lot of steps 
+%This is not a benchmarking test.
+test_server_initialization() ->
+    initialize_server(),  
+    io:fwrite("messages ~n"),
+    s1 ! {self(), ping},
+    print_all_messages(s1).
+
+
+  
+
+print_all_messages(SPID) ->
+    receive 
+        X -> io:fwrite("got ~p~n", [X]),  print_all_messages(SPID)
+        after timer:seconds(1) -> io:fwrite("received all messages ~n")
+    end.
+
+
+get_user(ServerPid, Username) ->
+    ServerPid !  {self(), user, Username},
+    receive 
+        {_, users, User} ->
+            io:fwrite("User ~p ~n", [User]) 
+    end.
