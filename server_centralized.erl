@@ -61,8 +61,8 @@ server_actor(Users) ->
     receive
         %testing purposes
         {Sender, ping} ->
-            io:fwrite("pinged~n"),
-            Sender ! {self(), pong};
+            Sender ! {self(), pong},
+            server_actor(Users);
         {Sender, users} ->
             Sender ! {self(), users, Users},
             server_actor(Users);

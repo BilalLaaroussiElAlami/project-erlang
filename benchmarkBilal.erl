@@ -1,6 +1,6 @@
 -module(benchmarkBilal).
 
--export([test_fib/0, test_timeline/0, test_send_message/0, pick_random_n/2, split/2, initialize_server/0, test_server_initialization/0]).
+-export([test_fib/0, test_timeline/0, test_send_message/0, pick_random_n/2, split/2, initialize_server/0, test_server_initialization/0, print_user/1]).
 
 %% Fibonacci
 fib(0) -> 1;
@@ -243,19 +243,37 @@ test_server_initialization() ->
     initialize_server(),  
     io:fwrite("messages ~n"),
     s1 ! {self(), ping},
-    print_all_messages(s1).
-
-
-  
+    print_all_messages(s1),
+    get_users(s1).
+   
 
 print_all_messages(SPID) ->
     receive 
-        X -> io:fwrite("got ~p~n", [X]),  print_all_messages(SPID)
+        X -> io:format("got ~p~n", [X]),  print_all_messages(SPID)
         after timer:seconds(1) -> io:fwrite("received all messages ~n")
     end.
 
+get_users(ServerPid) -> 
+    io:fwrite("~p is at ~p~n", [ServerPid, whereis(ServerPid)]),
+    ServerPid ! {self(), users},
+    receive
+        {_Sender, users, Users} -> print_users(Users) 
+    end.
 
+print_users(Users) ->
+    UsersLst = lists:map(fun({Key,Value}) -> Value end, dict:to_list(Users)),
+    lists:foreach(fun(User) -> print_user(User) end, UsersLst).
+
+print_user(User) ->
+     {user, Name, Subscriptions, Subscribers, Messages, Timeline} = User,
+     io:fwrite("NAME USER: ~p~n", [Name]),
+     io:fwrite("  Subscriptions:~n  ~p~n", [Subscriptions]),
+     io:fwrite("  Subscribers:~n  ~p~n", [Subscribers]),
+     io:fwrite("  Messages:~n  ~p~n", [Messages]),
+     io:fwrite("  Timeline:~n  ~p~n", [Timeline]).
+  
 get_user(ServerPid, Username) ->
+    io:fwrite("~p is at ~p", [ServerPid, whereis(ServerPid)]),
     ServerPid !  {self(), user, Username},
     receive 
         {_, users, User} ->
