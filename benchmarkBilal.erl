@@ -1,6 +1,6 @@
 -module(benchmarkBilal).
 
--export([test_fib/0, test_timeline/0, test_send_message/0, pick_random_n/2, split/2]).
+-export([test_fib/0, test_timeline/0, test_send_message/0, pick_random_n/2, split/2, initialize_server/0]).
 
 %% Fibonacci
 fib(0) -> 1;
@@ -95,76 +95,66 @@ initialize_server() ->
     % Parameters
     NumberOfServers = 5,
     NumberOfUsers = 5000,
-    NUmberOfUsersPerServer = NumberOfUsers/NumberOfServers,
+    NUmberOfUsersPerServer = NumberOfUsers div NumberOfServers,
     NumberOfSubscriptions = 50,
     % Users follow evenly over servers
-    NumberOfSubscriptionsPerServer = NumberOfSubscriptions div NumberOfServers
+    NumberOfSubscriptionsPerServer = NumberOfSubscriptions div NumberOfServers,
     NumberOfMessages = 10,
     io:format("Parameters:~n"),
     io:format("Number of users: ~p~n",             [NumberOfUsers]), 
     io:format("Number of servers: ~p~n",           [NumberOfServers]),
     io:format("Number of users per server : ~p~n", [NUmberOfUsersPerServer]),
     io:format("Number of subscriptions: ~p~n",     [NumberOfSubscriptions]),
+    io:format("Number of subscriptions per server: ~p~n", [NumberOfSubscriptionsPerServer]),
     io:format("Number of messages: ~p~n",          [NumberOfMessages]),
     UnisUserNames = split(NumberOfUsers,NumberOfServers),
     server_centralized:initialize_alternative(UnisUserNames),
-   
+    everyone_follow(UnisUserNames, NumberOfSubscriptionsPerServer),
 
+   
+%All users in all unis follow N random users per each uni
 everyone_follow(UnisUsers, N) ->
     lists:foreach(
         fun(UniUsers) ->
-            [Uni,Users] = UniUsers,
-            lists:foreach(
-                fun(User) ->
-                    RandomUsers = pick_random_users_over_unis(UnisUsers, N), % each User follows N random Users per Uni
-                    
-
-                )
-
-            end,
+            everyone_in_uni_follows(UniUsers, UnisUsers, N) end, 
         UnisUsers
-        )
+    ).
+
+%All users in one uni follow N random users per each uni        
 everyone_in_uni_follows(UniUsers, UnisUsers, N) ->
     [Uni,Users] = UniUsers,
-    lists:foreach(
-        fun(User) ->
-            user_follow_random_n(PidFollower, UsernameFollower, UnisUsers, N) ->
-        )
-
-
-%UsernameFollower follows N random users per server
+    lists:foreach( 
+            user_follow_random_n(Uni, User, UnisUsers, N) end,
+            Users
+    ).
+        
+%One user in one uni follow N random users per each uni 
 user_follow_random_n(PidFollower, UsernameFollower, UnisUsers, N) ->
     FolloweesPerUni = pick_random_users_over_unis(UnisUsers, N), 
-    lists:foreach(
+    lists:foreach(  %iterate over unis
         fun(FolloweesUni) ->
             [Uni, Followees] = FolloweesUni,
-            lists:foreach(
+            lists:foreach( 
                 fun(Followee) ->
                     follow(PidFollower,UsernameFollower,Followee,Uni) end,
                     Followees
                 )
             end,
             FolloweesPerUni
-        ).
+    ).
 
-
-
-
-%picks random UsersPerUni Users per Uni, each associated with the uni
-pick_random_users_over_unis(UnisUsers, UsersPerUni) ->
+%picks random N Users per Uni, each associated with the uni 
+pick_random_users_over_unis(UnisUsers, N) ->
     lists:map(
         fun(UniUsers) -> 
             [Uni, Users] = UniUsers,
-            [Uni, pick_random_n(Users,UsersPerUni)] end,
+            [Uni, pick_random_n(Users,N)] end,
             UnisUsers).
-
-
 
 follow(PidFollower, UsernameFollower, UserNameFollowee, PidFollowee) ->
     %vub ! {self(), follow, "Alice", "Bob", vub},
     PidFollower ! {self(), follow, UsernameFollower, UserNameFollowee, PidFollowee}.
    
-
 %assumes N_Users are evenly dividable betweeb N_servers
 %returns unique serverids associated with unique usernames
 %example  split(6,3) return [[1, [1,2]], [2, [3,4]], [3, [5,6]]
@@ -175,10 +165,15 @@ split(N_users,N_servers) ->
         fun(Server) ->
             Begin = (Server-1)*Part + 1,
             End   = Server*Part,
-            [Server, lists:seq(Begin, End)] end,
+            ServerActor = list_to_atom("s" ++ integer_to_list(Server)),
+            [ServerActor, lists:seq(Begin, End)] end,
         Servers
     ),
     Result.
+
+
+
+
 % Pick a random element from a list.
 pick_random(List) ->
     lists:nth(rand:uniform(length(List)), List).
