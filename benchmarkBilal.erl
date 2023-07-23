@@ -110,6 +110,7 @@ initialize_server() ->
     UnisUserNames = split(NumberOfUsers,NumberOfServers),
     server_centralized:initialize_alternative(UnisUserNames),
     everyone_follow(UnisUserNames, NumberOfSubscriptionsPerServer),
+    send_messages(UnisUserNames, NumberOfMessages).
 
    
 %All users in all unis follow N random users per each uni
@@ -124,9 +125,10 @@ everyone_follow(UnisUsers, N) ->
 everyone_in_uni_follows(UniUsers, UnisUsers, N) ->
     [Uni,Users] = UniUsers,
     lists:foreach( 
-            user_follow_random_n(Uni, User, UnisUsers, N) end,
+            fun(User) ->
+                user_follow_random_n(Uni, User, UnisUsers, N) end,
             Users
-    ).
+    ). 
         
 %One user in one uni follow N random users per each uni 
 user_follow_random_n(PidFollower, UsernameFollower, UnisUsers, N) ->
@@ -172,6 +174,27 @@ split(N_users,N_servers) ->
     Result.
 
 
+send_messages(UnisUsernames, N_messages) ->
+    lists:foreach(
+        fun(UniUserNames) ->
+            [Uni, UserNames] = UniUserNames,
+            lists:foreach(
+                fun(UserName) ->
+                    lists:foreach(
+                        fun(I) ->
+                            Message = generate_message(Uni,UserName,I),
+                            send_message(Uni,UserName,Message) end,
+                            lists:seq(1,N_messages))
+                end,
+                UserNames
+            )end,
+            UnisUsernames
+    ).
+
+
+
+send_message(ServerPid, UserName, MessageText) ->
+    ServerPid ! {self(), send_message, UserName, MessageText, os:system_time()}.
 
 
 % Pick a random element from a list.
@@ -183,8 +206,9 @@ pick_random_n(List, N) ->
     [pick_random(List) || _ <- lists:seq(1, N)].
 
 % Generate a random message `I` for `UserName`.
-generate_message(UserName, I) ->
-    Text = "Message " ++ integer_to_list(I) ++ " from " ++ UserName,
+generate_message(ServerPid, UserName, I) ->
+    %io:format("ServerPid ~p UserName ~p I ~p ~n", [ServerPid,UserName,I]),
+    Text = "Message " ++ integer_to_list(I) ++ " from " ++ UserName, %++ "located at" ++ ServerPid,
     {message, UserName, Text, os:system_time()}.
 
 % Get timeline of 10000 users (repeated 30 times).
