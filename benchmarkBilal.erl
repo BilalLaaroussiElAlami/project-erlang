@@ -96,7 +96,9 @@ initialize_server() ->
     NumberOfServers = 5,
     NumberOfUsers = 5000,
     NUmberOfUsersPerServer = NumberOfUsers/NumberOfServers,
-    NumberOfSubscriptions = 25,
+    NumberOfSubscriptions = 50,
+    % Users follow evenly over servers
+    NumberOfSubscriptionsPerServer = NumberOfSubscriptions div NumberOfServers
     NumberOfMessages = 10,
     io:format("Parameters:~n"),
     io:format("Number of users: ~p~n",             [NumberOfUsers]), 
@@ -104,13 +106,50 @@ initialize_server() ->
     io:format("Number of users per server : ~p~n", [NUmberOfUsersPerServer]),
     io:format("Number of subscriptions: ~p~n",     [NumberOfSubscriptions]),
     io:format("Number of messages: ~p~n",          [NumberOfMessages]),
-    
-    UserNames = [integer_to_list(I) || I <- lists:seq(1, NumberOfUsers)],
+    UnisUserNames = split(NumberOfUsers,NumberOfServers),
+    server_centralized:initialize_alternative(UnisUserNames),
+    lists:map(
+        fun(UniUsernames) ->
+            [Uni, Usernames] = UnisUserNames, 
+
+    )
+
+%picks random UsersPerUni Users per Uni, each associated with the uni
+pick_random_users_over_unis(UnisUsers, UsersPerUni) ->
+    lists:map(
+        fun(UniUsers) -> 
+            [Uni, Users] = UniUsers,
+            [Uni, pick_random_n(Users,UsersPerUni)] end,
+            UnisUsers).
+
+
+
+follow(PidFollower, UsernameFollower, UserNameFollowee, PidFollowee) ->
+    %vub ! {self(), follow, "Alice", "Bob", vub},
+    PidFollower ! {self(), follow, UsernameFollower, UserNameFollowee, PidFollowee}
    
 
+%assumes N_Users are evenly dividable betweeb N_servers
+%returns unique serverids associated with unique usernames
+%example  split(6,3) return [[1, [1,2]], [2, [3,4]], [3, [5,6]]
+split(N_users,N_servers) ->
+    Part = N_users div N_servers,
+    Servers = lists:seq(1, N_servers),
+    Result = lists:map(
+        fun(Server) ->
+            Begin = (Server-1)*Part + 1,
+            End   = Server*Part,
+            [Server, lists:seq(Begin, End)] end,
+        Servers
+    ),
+    Result.
 % Pick a random element from a list.
 pick_random(List) ->
     lists:nth(rand:uniform(length(List)), List).
+
+% Pick n random elements from list
+pick_random_n(List, N) ->
+    [pick_random(List) || _ <- lists:seq(1, N)]
 
 % Generate a random message `I` for `UserName`.
 generate_message(UserName, I) ->

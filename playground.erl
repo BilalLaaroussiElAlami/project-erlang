@@ -9,6 +9,7 @@ main() ->
     io:format(" sum 41 to 50 ~p\n", [Sum41TO50]).
 
 
+%assumes N_Users are evenly dividable betweeb N_servers
 split(N_users,N_servers) ->
     Part = N_users div N_servers,
     Servers = lists:seq(1, N_servers),
@@ -16,8 +17,7 @@ split(N_users,N_servers) ->
         fun(Server) ->
             Begin = (Server-1)*Part + 1,
             End   = Server*Part,
-            io:format("begin: ~p end: ~p\n",[Begin,End]),
-            [Server, lists:seq(round(Begin), round(End))] end,
+            [Server, lists:seq(Begin, End)] end,
         Servers
     ),
     Result.
