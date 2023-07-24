@@ -1,0 +1,10 @@
+Parameters:
+Number of users: 5000
+Number of servers: 5
+Number of users per server : 1000
+Number of subscriptions: 25
+Number of subscriptions per server: 5
+Number of messages: 2
+
+BREAK: (a)bort (A)bort with dump (c)ontinue (p)roc info (i)nfo
+       (l)oaded (v)ersion (k)ill (D)b-tables (d)istribution
