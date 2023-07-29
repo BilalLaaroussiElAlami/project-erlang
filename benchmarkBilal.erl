@@ -1,6 +1,7 @@
 -module(benchmarkBilal).
 
--export([test_fib/0, test_timeline/0, test_send_message/0, pick_random_n/2, split/2, initialize_server/0, test_server_initialization/0, test_send_message_bilal/0]).
+-export([initialize_server/3, test_fib/0, test_timeline/0, test_send_message/0, pick_random_n/2, split/2, initialize_parallel_server/4,
+     test_server_initialization/0, test_send_message_bilal/0,receive_timelines/1 ]).
 
 %% Fibonacci
 fib(0) -> 1;
@@ -87,21 +88,54 @@ test_fib_benchmark() ->
 %
 % Note that this code depends on the implementation of the server. You will need to
 % change it if you change the representation of the data in the server.
-
-
-
-%---------------------------------BEGIN INITIALISATION CODE------------------------------------------
-initialize_server() ->
+% Creates a server with 5000 users following 25 others and sending 10 messages.
+%
+% Note that this code depends on the implementation of the server. You will need to
+% change it if you change the representation of the data in the server.
+initialize_server(NumberOfUsers,NumberOfSubscriptions,NumberOfMessages) ->
     % Seed random number generator to get reproducible results.
     rand:seed_s(exsplus, {0, 0, 0}),
     % Parameters
-    NumberOfServers = 5,
-    NumberOfUsers = 5000,
+    %NumberOfUsers = 5000,
+    %NumberOfSubscriptions = 25,
+    %NumberOfMessages = 10,
+    io:format("Parameters:~n"),
+    io:format("Number of users: ~p~n", [NumberOfUsers]),
+    io:format("Number of subscriptions: ~p~n", [NumberOfSubscriptions]),
+    io:format("Number of messages: ~p~n", [NumberOfMessages]),
+    io:format("~n"),
+    % Generate user names: just the numbers from 1 to NumberOfUsers, as strings.
+    % Note: integer_to_list convert an integer to a string, e.g. 123 to "123".
+    % Note: the syntax [F(X) || X <- L] is a list comprehension. It generates a list
+    % by applying F to each element of L. It is equivalent to
+    % lists:map(fun (X) -> F(X) end, L).
+    UserNames = [integer_to_list(I) || I <- lists:seq(1, NumberOfUsers)],
+    % Generate users dict.
+    Users = dict:from_list(lists:map(fun (Name) ->
+        % Random subscriptions.
+        Subscriptions = [pick_random(UserNames) || _ <- lists:seq(1, NumberOfSubscriptions)],
+        % Random messages.
+        Messages = [generate_message(Name, I) || I <- lists:seq(1, NumberOfMessages)],
+        User = {user, Name, sets:from_list(Subscriptions), Messages},
+        {Name, User} % {key, value} for dict.
+        end,
+        UserNames)),
+    ServerPid = server_centralized:initialize_with(Users),
+    {ServerPid, UserNames}.
+
+
+%---------------------------------BEGIN INITIALISATION CODE------------------------------------------
+initialize_parallel_server(NumberOfUsers,NumberOfSubscriptions,NumberOfMessages, NumberOfServers) ->
+    % Seed random number generator to get reproducible results.
+    rand:seed_s(exsplus, {0, 0, 0}),
+    % Parameters
+    %NumberOfServers = 5,
+    % NumberOfUsers = 5000, 
     NUmberOfUsersPerServer = NumberOfUsers div NumberOfServers,
-    NumberOfSubscriptions = 25,
+    % NumberOfSubscriptions = 25,
     % Users follow evenly over servers
     NumberOfSubscriptionsPerServer = NumberOfSubscriptions div NumberOfServers,
-    NumberOfMessages = 2,
+    %  NumberOfMessages = 2,
     io:format("Parameters:~n"),
     io:format("Number of users: ~p~n",             [NumberOfUsers]), 
     io:format("Number of servers: ~p~n",           [NumberOfServers]),
@@ -177,6 +211,7 @@ split(N_users,N_servers) ->
     Result.
 
 %This function will make every user send N messages
+% To do to wait for confirmation for request otherwise not useful for benchmarking
 send_messages(UnisUsernames, N_messages) ->
     lists:foreach(
         fun(UniUserNames) ->
@@ -211,12 +246,21 @@ generate_message(ServerPid, UserName, I) ->
     Text = "Message " ++ integer_to_list(I) ++ " from " ++ UserName, %++ "located at" ++ ServerPid,
     {message, UserName, Text, os:system_time()}.
 
+% Generate a random message `I` for `UserName`.
+generate_message(UserName, I) ->
+    Text = "Message " ++ integer_to_list(I) ++ " from " ++ UserName,
+    {message, UserName, Text, os:system_time()}.
+
 %--------------------------------- END INITIALISATION CODE -----------------------------------------
 
-%--------------------------------- BEGIN EXPERIMENT 1 ----------------------------------------------
+%--------------------------------- EXPERIMENT 1 ----------------------------------------------
 %GOAL: measure the latency of send_message depending of the amount of erlang threads
 test_send_message_bilal() ->
-    UnisUserNames = initialize_server(),
+    NumberOfUsers = 500, 
+    NumberOfSubscriptions = 25,
+    NumberOfMessages = 5,
+    NumberOfServers = 5,
+    UnisUserNames = initialize_parallel_server(NumberOfUsers,NumberOfSubscriptions,NumberOfMessages, NumberOfServers),
     MessagesSentPerUser = 5,
     run_benchmark("send_message",
         fun () ->
@@ -224,12 +268,20 @@ test_send_message_bilal() ->
         end,
         30).
 
-
-
-% Get timeline of 10000 users (repeated 30 times).
+%--------------------------------EXPERIMENT 2----------------------------------------------------------
+%GOAL: measure the latency of get_profile depending sequential or parallel version 
 test_timeline() ->
-    {ServerPid, UserName} = initialize_server(),
-    run_benchmark("timeline",
+    NumberOfUsers = 500, 
+    NumberOfSubscriptions = 25,
+    NumberOfMessages = 5,
+    NumberOfServers = 5,
+    test_timeline_sequential(NumberOfUsers,NumberOfSubscriptions,NumberOfMessages),
+    test_timeline_parallel(NumberOfUsers,NumberOfSubscriptions,NumberOfMessages,NumberOfServers).
+
+% Get timeline of 10000 random users (repeated 30 times).
+test_timeline_sequential(NumberOfUsers,NumberOfSubscriptions,NumberOfMessages) ->
+    {ServerPid, UserName} = initialize_server(NumberOfUsers,NumberOfSubscriptions,NumberOfMessages),
+    run_benchmark("testing timeline sequential implementation",
         fun () ->
             lists:foreach(fun (_) ->
                 server:get_timeline(ServerPid, pick_random(UserName))
@@ -238,15 +290,46 @@ test_timeline() ->
         end,
         30).
 
+test_timeline_parallel(NumberOfUsers,NumberOfSubscriptions,NumberOfMessages, NumberOfServers) ->
+    UnisUserNames = initialize_parallel_server(NumberOfUsers,NumberOfSubscriptions,NumberOfMessages, NumberOfServers),
+    run_benchmark("testin timeline parallel implmementation",
+        fun () ->
+            lists:foreach(fun (UnisRandomSelectionUsernames) ->
+                get_timelines_parallel(UnisRandomSelectionUsernames) end,
+                pick_random_users_over_unis(UnisUserNames, NumberOfUsers div lists:length(UnisUserNames)))
+        end,
+        30).
+
+
+get_timelines_parallel(UnisUsernames) ->
+    lists:foreach(
+        fun([Uni,Usernames])->
+            lists:foreach(fun(Username) -> Uni ! {self(), timeline, Username} end, Usernames) end,
+            UnisUsernames
+    ),
+    N = lists:sum(lists:map(fun([_,Usernames])-> lists:length(Usernames) end, UnisUsernames)),
+    receive_timelines(N).
+
+%N is the amount of timelines we need to receive
+receive_timelines(N) ->
+    receive {_Sender, timeline, _UserName, _TimeLine} ->
+        if (N>0) -> receive_timelines(N-1) end
+    end.
+
+
+
 % Send message for 10000 users.
 test_send_message() ->
-    {ServerPid, UserName} = initialize_server(),
+    NumberOfUsers = 500, 
+    NumberOfSubscriptions = 25,
+    NumberOfMessages = 5,
+    {ServerPid, UserName} = initialize_server(NumberOfUsers,NumberOfSubscriptions,NumberOfMessages),
     run_benchmark("send_message",
         fun () ->
             lists:foreach(fun (_) ->
                 server:send_message(ServerPid, pick_random(UserName), "Test")
             end,
-            lists:seq(1, 10000))
+           lists:seq(1, 10000))
         end,
         30).
 
@@ -254,7 +337,11 @@ test_send_message() ->
 %This function tests the server initialisation because the initialization is a lot of steps 
 %This is not a benchmarking test.
 test_server_initialization() ->
-    initialize_server(),  
+    NumberOfUsers = 500, 
+    NumberOfSubscriptions = 25,
+    NumberOfMessages = 5,
+    NumberOfServers = 5,
+    initialize_parallel_server(NumberOfUsers,NumberOfSubscriptions,NumberOfMessages,NumberOfServers),  
     io:fwrite("messages ~n"),
     s1 ! {self(), ping},
     print_all_messages(s1),
@@ -293,3 +380,6 @@ get_user(ServerPid, Username) ->
         {_, users, User} ->
             io:fwrite("User ~p ~n", [User]) 
     end.
+
+
+
