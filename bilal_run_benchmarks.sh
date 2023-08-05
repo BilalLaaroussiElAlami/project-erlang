@@ -10,4 +10,3 @@ do
     echo "> send_message_bilal, $i threads"
     erl +S $i -noshell -s benchmarkBilal test_send_message_bilal -s init stop > "benchmarks/result-send_message-$i.txt"
 done
-”

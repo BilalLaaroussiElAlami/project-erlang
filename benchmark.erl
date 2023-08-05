@@ -1,6 +1,6 @@
 -module(benchmark).
 
--export([test_fib/0, test_timeline/0, test_send_message/0]).
+-export([test_fib/0, test_timeline/0, test_send_message/0, initialize_server/0]).
 
 %% Fibonacci
 fib(0) -> 1;

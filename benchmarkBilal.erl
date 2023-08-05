@@ -1,6 +1,6 @@
 -module(benchmarkBilal).
 
--export([initialize_server/3, test_fib/0, test_timeline/0, test_send_message/0, pick_random_n/2, split/2, initialize_parallel_server/4,
+-export([test_fib/0, test_timeline/0,  pick_random_n/2, split/2, initialize_parallel_server/4,
      test_server_initialization/0, test_send_message_bilal/0,receive_timelines/1 ]).
 
 %% Fibonacci
@@ -92,7 +92,7 @@ test_fib_benchmark() ->
 %
 % Note that this code depends on the implementation of the server. You will need to
 % change it if you change the representation of the data in the server.
-initialize_server(NumberOfUsers,NumberOfSubscriptions,NumberOfMessages) ->
+initialize_central_server(NumberOfUsers,NumberOfSubscriptions,NumberOfMessages) ->
     % Seed random number generator to get reproducible results.
     rand:seed_s(exsplus, {0, 0, 0}),
     % Parameters
@@ -144,7 +144,7 @@ initialize_parallel_server(NumberOfUsers,NumberOfSubscriptions,NumberOfMessages,
     io:format("Number of subscriptions per server: ~p~n", [NumberOfSubscriptionsPerServer]),
     io:format("Number of messages: ~p~n",          [NumberOfMessages]),
     UnisUserNames = split(NumberOfUsers,NumberOfServers),
-    server_centralized:initialize_alternative(UnisUserNames),
+    server_parallel:initialize_alternative(UnisUserNames),
     everyone_follow(UnisUserNames, NumberOfSubscriptionsPerServer),
     send_messages(UnisUserNames, NumberOfMessages),
     io:fwrite("finished initialisation benchmark tests can start ~n"),
@@ -256,7 +256,7 @@ generate_message(UserName, I) ->
 %--------------------------------- EXPERIMENT 1 ----------------------------------------------
 %GOAL: measure the latency of send_message depending of the amount of erlang threads
 test_send_message_bilal() ->
-    NumberOfUsers = 500, 
+    NumberOfUsers = 10000, 
     NumberOfSubscriptions = 25,
     NumberOfMessages = 5,
     NumberOfServers = 5,
@@ -271,16 +271,19 @@ test_send_message_bilal() ->
 %--------------------------------EXPERIMENT 2----------------------------------------------------------
 %GOAL: measure the latency of get_profile depending sequential or parallel version 
 test_timeline() ->
-    NumberOfUsers = 500, 
+    NumberOfUsers = 10000, 
     NumberOfSubscriptions = 25,
     NumberOfMessages = 5,
     NumberOfServers = 5,
-    test_timeline_sequential(NumberOfUsers,NumberOfSubscriptions,NumberOfMessages),
-    test_timeline_parallel(NumberOfUsers,NumberOfSubscriptions,NumberOfMessages,NumberOfServers).
+    test_timeline_sequential(NumberOfUsers,NumberOfSubscriptions,NumberOfMessages).
+  % test_timeline_parallel(NumberOfUsers,NumberOfSubscriptions,NumberOfMessages,NumberOfServers).
+
+
+
 
 % Get timeline of 10000 random users (repeated 30 times).
 test_timeline_sequential(NumberOfUsers,NumberOfSubscriptions,NumberOfMessages) ->
-    {ServerPid, UserName} = initialize_server(NumberOfUsers,NumberOfSubscriptions,NumberOfMessages),
+    {ServerPid, UserName} = initialize_central_server(NumberOfUsers,NumberOfSubscriptions,NumberOfMessages),
     run_benchmark("testing timeline sequential implementation",
         fun () ->
             lists:foreach(fun (_) ->
@@ -290,15 +293,15 @@ test_timeline_sequential(NumberOfUsers,NumberOfSubscriptions,NumberOfMessages) -
         end,
         30).
 
-test_timeline_parallel(NumberOfUsers,NumberOfSubscriptions,NumberOfMessages, NumberOfServers) ->
-    UnisUserNames = initialize_parallel_server(NumberOfUsers,NumberOfSubscriptions,NumberOfMessages, NumberOfServers),
-    run_benchmark("testin timeline parallel implmementation",
-        fun () ->
-            lists:foreach(fun (UnisRandomSelectionUsernames) ->
-                get_timelines_parallel(UnisRandomSelectionUsernames) end,
-                pick_random_users_over_unis(UnisUserNames, NumberOfUsers div lists:length(UnisUserNames)))
-        end,
-        30).
+%test_timeline_parallel(NumberOfUsers,NumberOfSubscriptions,NumberOfMessages, NumberOfServers) ->
+%    UnisUserNames = initialize_parallel_server(NumberOfUsers,NumberOfSubscriptions,NumberOfMessages, NumberOfServers),
+%    run_benchmark("testin timeline parallel implmementation",
+%        fun () ->
+%            lists:foreach(fun (UnisRandomSelectionUsernames) ->
+%                get_timelines_parallel(UnisRandomSelectionUsernames) end,
+%                pick_random_users_over_unis(UnisUserNames, NumberOfUsers div lists:length(UnisUserNames)))
+%        end,
+%        30).
 
 
 get_timelines_parallel(UnisUsernames) ->
@@ -317,21 +320,21 @@ receive_timelines(N) ->
     end.
 
 
-
+%ORIGINAL
 % Send message for 10000 users.
-test_send_message() ->
-    NumberOfUsers = 500, 
-    NumberOfSubscriptions = 25,
-    NumberOfMessages = 5,
-    {ServerPid, UserName} = initialize_server(NumberOfUsers,NumberOfSubscriptions,NumberOfMessages),
-    run_benchmark("send_message",
-        fun () ->
-            lists:foreach(fun (_) ->
-                server:send_message(ServerPid, pick_random(UserName), "Test")
-            end,
-           lists:seq(1, 10000))
-        end,
-        30).
+%test_send_message() ->
+%    NumberOfUsers = 500, 
+%    NumberOfSubscriptions = 25,
+%    NumberOfMessages = 5,
+%    {ServerPid, UserName} = initialize_server(NumberOfUsers,NumberOfSubscriptions,NumberOfMessages),
+%    run_benchmark("send_message",
+%        fun () ->
+%            lists:foreach(fun (_) ->
+%                server:send_message(ServerPid, pick_random(UserName), "Test")
+%            end,
+%           lists:seq(1, 10000))
+%        end,
+%        30).
 
 
 %This function tests the server initialisation because the initialization is a lot of steps 
