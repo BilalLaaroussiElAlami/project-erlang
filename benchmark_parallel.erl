@@ -273,10 +273,10 @@ test_send_message_bilal() ->
 
 %--------------------------------EXPERIMENT 2----------------------------------------------------------
 
--define(TestTimelineNumberOfUsers, 1000).
+-define(TestTimelineNumberOfUsers, 10000).
 -define(TestTimelineNumberOfSubscriptions, 5).
 -define(TestTimelineNumberOfMessages, 3).
--define(TestTimelineNumberOfServers, 5).
+-define(TestTimelineNumberOfServers, 3).
 
 test_timeline() ->  "sequential and parallel tests are seperate functions".
 
@@ -300,14 +300,14 @@ test_timeline_sequential(NumberOfUsers,NumberOfSubscriptions,NumberOfMessages) -
 
 test_timeline_parallel(NumberOfUsers,NumberOfSubscriptions,NumberOfMessages, NumberOfServers) ->
     UnisUserNames = initialize_parallel_server(NumberOfUsers,NumberOfSubscriptions,NumberOfMessages, NumberOfServers),
-    run_benchmark("testing timeline parallel implmementation",
+    run_benchmark("testing timeline parallel implementation",
         fun () ->
             %lists:foreach(fun (UnisRandomSelectionUsernames) ->
             %    get_timelines_parallel(UnisRandomSelectionUsernames) end, %why did i do a randol selection
             %    pick_random_users_over_unis(UnisUserNames, NumberOfUsers div lists:length(UnisUserNames))) %this are just all users/ doesnt do anything?
                 get_timelines_parallel(UnisUserNames) 
         end,
-        1).
+        30).
 
 
 %sequentially, but just sends messages.
@@ -328,7 +328,7 @@ receive_timelines(0) ->
 receive_timelines(1) ->
     receive
     {_Sender, timeline, UserName, TimeLine} ->
-        io:format("timeline of one person ~p ~n ~p", [UserName, TimeLine]),
+        %io:format("timeline of one person ~p ~n ~p", [UserName, TimeLine]),
         receive_timelines(0)
     end;
 
