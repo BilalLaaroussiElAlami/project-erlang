@@ -147,6 +147,7 @@ initialize_parallel_server(NumberOfUsers,NumberOfSubscriptions,NumberOfMessages,
     server_parallel:initialize_alternative(UnisUserNames),
     everyone_follow(UnisUserNames, NumberOfSubscriptionsPerServer),
     send_messages(UnisUserNames, NumberOfMessages),
+    timer:sleep(3000), %wait for the messages to arrive 
     io:fwrite("finished initialisation benchmark tests can start ~n"),
     UnisUserNames.
 
@@ -244,7 +245,9 @@ pick_random_n(List, N) ->
 generate_message(ServerPid, UserName, I) ->
     %io:format("ServerPid ~p UserName ~p I ~p ~n", [ServerPid,UserName,I]),
     Text = "Message " ++ integer_to_list(I) ++ " from " ++ UserName, %++ "located at" ++ ServerPid,
-    {message, UserName, Text, os:system_time()}.
+    "blablabla".
+    %{message, UserName, Text, os:system_time()}.
+
 
 % Generate a random message `I` for `UserName`.
 generate_message(UserName, I) ->
@@ -271,8 +274,8 @@ test_send_message_bilal() ->
 %--------------------------------EXPERIMENT 2----------------------------------------------------------
 
 -define(TestTimelineNumberOfUsers, 1000).
--define(TestTimelineNumberOfSubscriptions, 25).
--define(TestTimelineNumberOfMessages, 5).
+-define(TestTimelineNumberOfSubscriptions, 5).
+-define(TestTimelineNumberOfMessages, 3).
 -define(TestTimelineNumberOfServers, 5).
 
 test_timeline() ->  "sequential and parallel tests are seperate functions".
@@ -304,7 +307,7 @@ test_timeline_parallel(NumberOfUsers,NumberOfSubscriptions,NumberOfMessages, Num
             %    pick_random_users_over_unis(UnisUserNames, NumberOfUsers div lists:length(UnisUserNames))) %this are just all users/ doesnt do anything?
                 get_timelines_parallel(UnisUserNames) 
         end,
-        30).
+        1).
 
 
 %sequentially, but just sends messages.
@@ -325,7 +328,7 @@ receive_timelines(0) ->
 receive_timelines(1) ->
     receive
     {_Sender, timeline, UserName, TimeLine} ->
-        io:format("got timeline of ~p ~n ~p", [UserName, TimeLine]),
+        io:format("timeline of one person ~p ~n ~p", [UserName, TimeLine]),
         receive_timelines(0)
     end;
 
@@ -354,6 +357,8 @@ receive_timelines(N) ->
 %        30).
 
 
+
+%--------------------TESTING INITIALISATION---------------
 %This function tests the server initialisation because the initialization is a lot of steps 
 %This is not a benchmarking test.
 test_server_initialization() ->

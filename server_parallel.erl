@@ -60,6 +60,8 @@ initialize_alternative(Unis) ->
 server_actor(Users) ->
     receive
         %testing purposes
+        {Sender, kill} ->
+            "killed";
         {Sender, ping} ->
             Sender ! {self(), pong},
             server_actor(Users);
