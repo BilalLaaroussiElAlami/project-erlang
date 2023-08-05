@@ -1,6 +1,6 @@
 -module(playground).
 -include_lib("eunit/include/eunit.hrl").
--export([main/0, split/2, make_list/3]).
+-export([main/0, split/2, make_list/3, bla/0]).
 
 main() ->
     Split = split(100,10),
@@ -28,3 +28,5 @@ make_list(Start,Stop, Acc) ->
     true -> make_list(Start+1,Stop, [Start | Acc]) end.
 
 
+bla() ->
+    length([1,2]).

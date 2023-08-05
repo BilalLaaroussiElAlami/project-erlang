@@ -1,7 +1,7 @@
--module(benchmarkBilal).
+-module(benchmark_parallel).
 
 -export([test_fib/0, test_timeline/0,  pick_random_n/2, split/2, initialize_parallel_server/4,
-     test_server_initialization/0, test_send_message_bilal/0,receive_timelines/1 ]).
+     test_server_initialization/0, test_send_message_bilal/0,receive_timelines/1, test_timeline_sequential/0, test_timeline_parallel/0]).
 
 %% Fibonacci
 fib(0) -> 1;
@@ -257,7 +257,7 @@ generate_message(UserName, I) ->
 %GOAL: measure the latency of send_message depending of the amount of erlang threads
 test_send_message_bilal() ->
     NumberOfUsers = 10000, 
-    NumberOfSubscriptions = 25,
+    NumberOfSubscriptions = 1,
     NumberOfMessages = 5,
     NumberOfServers = 5,
     UnisUserNames = initialize_parallel_server(NumberOfUsers,NumberOfSubscriptions,NumberOfMessages, NumberOfServers),
@@ -269,17 +269,19 @@ test_send_message_bilal() ->
         30).
 
 %--------------------------------EXPERIMENT 2----------------------------------------------------------
-%GOAL: measure the latency of get_profile depending sequential or parallel version 
-test_timeline() ->
-    NumberOfUsers = 10000, 
-    NumberOfSubscriptions = 25,
-    NumberOfMessages = 5,
-    NumberOfServers = 5,
-    test_timeline_sequential(NumberOfUsers,NumberOfSubscriptions,NumberOfMessages).
-  % test_timeline_parallel(NumberOfUsers,NumberOfSubscriptions,NumberOfMessages,NumberOfServers).
 
+-define(TestTimelineNumberOfUsers, 1000).
+-define(TestTimelineNumberOfSubscriptions, 25).
+-define(TestTimelineNumberOfMessages, 5).
+-define(TestTimelineNumberOfServers, 5).
 
+test_timeline() ->  "sequential and parallel tests are seperate functions".
 
+test_timeline_sequential() ->
+    test_timeline_sequential(?TestTimelineNumberOfUsers, ?TestTimelineNumberOfSubscriptions,?TestTimelineNumberOfMessages).
+
+test_timeline_parallel() ->
+    test_timeline_parallel(?TestTimelineNumberOfUsers, ?TestTimelineNumberOfSubscriptions,?TestTimelineNumberOfMessages, ?TestTimelineNumberOfServers).
 
 % Get timeline of 10000 random users (repeated 30 times).
 test_timeline_sequential(NumberOfUsers,NumberOfSubscriptions,NumberOfMessages) ->
@@ -293,31 +295,46 @@ test_timeline_sequential(NumberOfUsers,NumberOfSubscriptions,NumberOfMessages) -
         end,
         30).
 
-%test_timeline_parallel(NumberOfUsers,NumberOfSubscriptions,NumberOfMessages, NumberOfServers) ->
-%    UnisUserNames = initialize_parallel_server(NumberOfUsers,NumberOfSubscriptions,NumberOfMessages, NumberOfServers),
-%    run_benchmark("testin timeline parallel implmementation",
-%        fun () ->
-%            lists:foreach(fun (UnisRandomSelectionUsernames) ->
-%                get_timelines_parallel(UnisRandomSelectionUsernames) end,
-%                pick_random_users_over_unis(UnisUserNames, NumberOfUsers div lists:length(UnisUserNames)))
-%        end,
-%        30).
+test_timeline_parallel(NumberOfUsers,NumberOfSubscriptions,NumberOfMessages, NumberOfServers) ->
+    UnisUserNames = initialize_parallel_server(NumberOfUsers,NumberOfSubscriptions,NumberOfMessages, NumberOfServers),
+    run_benchmark("testing timeline parallel implmementation",
+        fun () ->
+            %lists:foreach(fun (UnisRandomSelectionUsernames) ->
+            %    get_timelines_parallel(UnisRandomSelectionUsernames) end, %why did i do a randol selection
+            %    pick_random_users_over_unis(UnisUserNames, NumberOfUsers div lists:length(UnisUserNames))) %this are just all users/ doesnt do anything?
+                get_timelines_parallel(UnisUserNames) 
+        end,
+        30).
 
 
+%sequentially, but just sends messages.
 get_timelines_parallel(UnisUsernames) ->
     lists:foreach(
         fun([Uni,Usernames])->
             lists:foreach(fun(Username) -> Uni ! {self(), timeline, Username} end, Usernames) end,
-            UnisUsernames
+        UnisUsernames
     ),
-    N = lists:sum(lists:map(fun([_,Usernames])-> lists:length(Usernames) end, UnisUsernames)),
+    N = lists:sum(lists:map(fun([_,Usernames])-> length(Usernames) end, UnisUsernames)),
     receive_timelines(N).
 
 %N is the amount of timelines we need to receive
+%Sequentially waits on messages. This function would take as much time as if we would do it in parallel because even in parallel we'd need to wait on the slowest receive.
+receive_timelines(0) ->
+    io:format("received all timelines~n");
+
+receive_timelines(1) ->
+    receive
+    {_Sender, timeline, UserName, TimeLine} ->
+        io:format("got timeline of ~p ~n ~p", [UserName, TimeLine]),
+        receive_timelines(0)
+    end;
+
 receive_timelines(N) ->
-    receive {_Sender, timeline, _UserName, _TimeLine} ->
-        if (N>0) -> receive_timelines(N-1) end
+    receive
+        {_Sender, timeline, _UserName, TimeLine} ->
+            receive_timelines(N - 1)
     end.
+
 
 
 %ORIGINAL
